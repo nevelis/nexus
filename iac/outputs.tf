@@ -20,22 +20,12 @@ output "mcp_endpoint" {
   value       = "https://${local.hostname}/mcp/"
 }
 
-output "db_host" {
-  description = "Managed PostgreSQL host"
-  value       = digitalocean_database_cluster.postgres.host
-}
-
-output "db_port" {
-  description = "Managed PostgreSQL port"
-  value       = digitalocean_database_cluster.postgres.port
+output "db_cluster" {
+  description = "Shared Postgres cluster hosting the nexus database"
+  value       = data.digitalocean_database_cluster.lab_dev.name
 }
 
 output "db_name" {
-  description = "Default database name"
-  value       = digitalocean_database_cluster.postgres.database
-}
-
-output "db_user" {
-  description = "Default database user"
-  value       = digitalocean_database_cluster.postgres.user
+  description = "Database name within the shared cluster"
+  value       = digitalocean_database_db.nexus.name
 }
