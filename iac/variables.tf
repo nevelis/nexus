@@ -34,9 +34,9 @@ variable "django_secret_key" {
 }
 
 variable "memory_request" {
-  description = "Pod memory request — bumped vs AGAST defaults due to sentence-transformers model (~200MB)"
+  description = "Pod memory request — sentence-transformers model needs ~200MB; cluster nodes are 1.5Gi allocatable"
   type        = string
-  default     = "512Mi"
+  default     = "384Mi"
 }
 
 variable "cpu_request" {

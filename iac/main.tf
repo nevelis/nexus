@@ -104,7 +104,9 @@ resource "kubernetes_config_map" "nexus" {
   data = {
     DJANGO_SETTINGS_MODULE = "config.settings"
     DEBUG                  = "false"
-    ALLOWED_HOSTS          = local.hostname
+    # Include localhost/127.0.0.1 so K8s liveness/readiness probes succeed.
+    # Probes use the pod IP directly, not the public hostname.
+    ALLOWED_HOSTS = "${local.hostname},localhost,127.0.0.1"
     PORT                   = "8000"
     # sentence-transformers model is baked into the image — no API key needed
     HF_HOME = "/app/.cache/huggingface"
