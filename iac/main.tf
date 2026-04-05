@@ -91,10 +91,8 @@ data "digitalocean_database_cluster" "lab_dev" {
   name = "lab-dev"
 }
 
-resource "digitalocean_database_db" "nexus" {
-  cluster_id = data.digitalocean_database_cluster.lab_dev.id
-  name       = "nexus"
-}
+# The `nexus` database was created manually via doctl and is not managed by
+# Terraform (to avoid the DO provider trying to recreate an existing database).
 
 # ── ConfigMap ──────────────────────────────────────────────────────────────────
 resource "kubernetes_config_map" "nexus" {

@@ -27,5 +27,5 @@ output "db_cluster" {
 
 output "db_name" {
   description = "Database name within the shared cluster"
-  value       = digitalocean_database_db.nexus.name
+  value       = "nexus"
 }
