@@ -30,7 +30,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_TOKEN }}
 
       - name: Log in to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 1200
+        run: doctl registry login --expiry-seconds 3600
 
       - name: Determine image tags
         id: tags
@@ -61,7 +61,6 @@ jobs:
             --platform linux/amd64 \
             --cache-from type=registry,ref=$IMAGE:$LATEST_TAG \
             --cache-from type=registry,ref=$IMAGE:buildcache \
-            --cache-to   type=registry,ref=$IMAGE:buildcache,mode=max \
             --tag "$IMAGE:$TAG" \
             --tag "$IMAGE:$LATEST_TAG" \
             --push \
