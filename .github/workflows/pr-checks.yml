@@ -1,0 +1,132 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY:   registry.digitalocean.com/amazingland
+  IMAGE_NAME: nexus
+
+jobs:
+  # ── Lint ───────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Check linting
+        run: ruff check .
+
+  # ── Python tests ───────────────────────────────────────────────────────────
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB:       nexus_test
+          POSTGRES_USER:     nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus_test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: |
+          pytest --tb=short -v \
+            --cov=documents --cov=search --cov=config \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+  # ── Terraform validate ─────────────────────────────────────────────────────
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform format check
+        working-directory: ./iac
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init (local backend for validation)
+        working-directory: ./iac
+        # Use local backend to validate without needing cluster access or secrets.
+        # This validates provider configs, variable types, and resource schema only.
+        run: |
+          terraform init \
+            -backend=false \
+            -input=false
+
+      - name: Terraform validate
+        working-directory: ./iac
+        run: terraform validate
+
+  # ── Docker build (no push) ─────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build (dry run)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          platforms: linux/amd64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
+          # Use GitHub Actions cache — no registry login needed for a dry-run build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

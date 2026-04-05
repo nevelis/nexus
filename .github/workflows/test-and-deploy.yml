@@ -13,6 +13,29 @@ env:
   NAMESPACE:  nexus              # Single environment — no stage/prod split
 
 jobs:
+  # ── Lint ───────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Check linting
+        run: ruff check .
+
   # ── Python tests ───────────────────────────────────────────────────────────
   python-tests:
     name: Python Tests
@@ -60,7 +83,7 @@ jobs:
   # ── Build + push image ─────────────────────────────────────────────────────
   build-image:
     name: Build Docker Image
-    needs: python-tests
+    needs: [lint, python-tests]
     uses: ./.github/workflows/build-and-push.yml
     secrets: inherit
     permissions:
@@ -129,7 +152,7 @@ jobs:
   # ── Summary ────────────────────────────────────────────────────────────────
   summary:
     name: Pipeline Summary
-    needs: [python-tests, build-image, deploy]
+    needs: [lint, python-tests, build-image, deploy]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -143,6 +166,7 @@ jobs:
           echo ""                                                                            >> $GITHUB_STEP_SUMMARY
           echo "| Job          | Result |"                                                  >> $GITHUB_STEP_SUMMARY
           echo "|--------------|--------|"                                                  >> $GITHUB_STEP_SUMMARY
+          echo "| Lint         | ${{ needs.lint.result }}         |"                       >> $GITHUB_STEP_SUMMARY
           echo "| Python Tests | ${{ needs.python-tests.result }} |"                       >> $GITHUB_STEP_SUMMARY
           echo "| Build Image  | ${{ needs.build-image.result }}  |"                       >> $GITHUB_STEP_SUMMARY
           echo "| Deploy       | ${{ needs.deploy.result }}       |"                       >> $GITHUB_STEP_SUMMARY

@@ -3,12 +3,10 @@ name: Build and Push Docker Image
 on:
   push:
     branches-ignore:
-      - main  # main is handled by test-and-deploy.yml (tests first, then build+deploy)
-  pull_request:
-    branches:
-      - main
+      - main  # main is handled by test-and-deploy.yml (tests → lint → build → deploy)
   workflow_dispatch:
   workflow_call:  # Called by test-and-deploy.yml for main branch builds
+  # Note: PRs use pr-checks.yml for a cache-only Docker dry-run (no registry push).
 
 env:
   REGISTRY:   registry.digitalocean.com/amazingland
