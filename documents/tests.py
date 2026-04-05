@@ -163,7 +163,9 @@ class TestDocumentDetailView(TestCase):
 
     def test_body_rendered_as_html(self):
         response = self.client.get("/test-doc/")
-        self.assertIn("<h1>", response.context["body_html"])
+        # markdown 3.x adds id= attributes to headings: <h1 id="heading">…</h1>
+        # Match the tag open without asserting the exact attribute list.
+        self.assertIn("<h1", response.context["body_html"])
         self.assertIn("<strong>", response.context["body_html"])
 
     def test_returns_404_for_missing_slug(self):
