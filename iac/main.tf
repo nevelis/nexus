@@ -14,19 +14,12 @@ terraform {
       source  = "digitalocean/digitalocean"
       version = "~> 2.0"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.14"
-    }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.11"
-    }
   }
 }
 
 # ── Pull substrate outputs ─────────────────────────────────────────────────────
-# Same cluster as AGAST — substrate state lives in the agast-tfstate space.
+# We only need region + cluster_id for the database firewall rule.
+# Auth for the Kubernetes provider comes from the kubeconfig (see below).
 data "terraform_remote_state" "substrate" {
   backend = "s3"
 
@@ -48,81 +41,22 @@ data "terraform_remote_state" "substrate" {
 }
 
 # ── Kubernetes provider ────────────────────────────────────────────────────────
+# Auth via kubeconfig — CI runs `doctl kubernetes cluster kubeconfig save agast-dev`
+# before Terraform, so ~/.kube/config is always fresh and doesn't use a token
+# that can expire when the cluster is upgraded.
 provider "kubernetes" {
-  host  = data.terraform_remote_state.substrate.outputs.cluster_endpoint
-  token = data.terraform_remote_state.substrate.outputs.cluster_token
-
-  cluster_ca_certificate = base64decode(
-    data.terraform_remote_state.substrate.outputs.cluster_ca_certificate
-  )
+  config_path    = "~/.kube/config"
+  config_context = "do-nyc3-agast-dev"
 }
 
 provider "digitalocean" {
   token = var.do_token
 }
 
-provider "helm" {
-  kubernetes {
-    host  = data.terraform_remote_state.substrate.outputs.cluster_endpoint
-    token = data.terraform_remote_state.substrate.outputs.cluster_token
-
-    cluster_ca_certificate = base64decode(
-      data.terraform_remote_state.substrate.outputs.cluster_ca_certificate
-    )
-  }
-}
-
-# ── cert-manager ───────────────────────────────────────────────────────────────
-# Shared cluster concern — idempotent, safe to apply alongside AGAST's copy.
-resource "helm_release" "cert_manager" {
-  name             = "cert-manager"
-  repository       = "https://charts.jetstack.io"
-  chart            = "cert-manager"
-  version          = "v1.17.1"
-  namespace        = "cert-manager"
-  create_namespace = true
-
-  set {
-    name  = "crds.enabled"
-    value = "true"
-  }
-}
-
-resource "time_sleep" "wait_for_cert_manager" {
-  depends_on      = [helm_release.cert_manager]
-  create_duration = "30s"
-}
-
-# ── Let's Encrypt ClusterIssuer ────────────────────────────────────────────────
-resource "kubernetes_manifest" "letsencrypt_issuer" {
-  depends_on = [time_sleep.wait_for_cert_manager]
-
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      name = "letsencrypt-prod"
-    }
-    spec = {
-      acme = {
-        server = "https://acme-v02.api.letsencrypt.org/directory"
-        email  = var.letsencrypt_email
-        privateKeySecretRef = {
-          name = "letsencrypt-prod-account-key"
-        }
-        solvers = [{
-          http01 = {
-            ingress = {
-              ingressClassName = "traefik"
-            }
-          }
-        }]
-      }
-    }
-  }
-}
-
 # ── HTTPS redirect middleware ──────────────────────────────────────────────────
+# Namespace-scoped Traefik middleware — nexus owns this.
+# cert-manager and the letsencrypt-prod ClusterIssuer are cluster-wide resources
+# managed by the AGAST substrate Terraform. Nexus references them via annotation.
 resource "kubernetes_manifest" "https_redirect_middleware" {
   manifest = {
     apiVersion = "traefik.io/v1alpha1"
@@ -190,7 +124,7 @@ resource "kubernetes_config_map" "nexus" {
     ALLOWED_HOSTS          = local.hostname
     PORT                   = "8000"
     # sentence-transformers model is baked into the image — no API key needed
-    HF_HOME                = "/app/.cache/huggingface"
+    HF_HOME = "/app/.cache/huggingface"
   }
 }
 
@@ -378,6 +312,8 @@ resource "kubernetes_ingress_v1" "nexus_http" {
 }
 
 # ── Ingress (HTTPS / TLS) ──────────────────────────────────────────────────────
+# cert-manager picks up the cluster-issuer annotation and provisions a TLS cert
+# from the letsencrypt-prod ClusterIssuer (managed by AGAST substrate Terraform).
 resource "kubernetes_ingress_v1" "nexus_https" {
   metadata {
     name      = "nexus-https"
@@ -416,6 +352,4 @@ resource "kubernetes_ingress_v1" "nexus_https" {
       }
     }
   }
-
-  depends_on = [kubernetes_manifest.letsencrypt_issuer]
 }
