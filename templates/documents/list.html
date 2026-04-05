@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Documents{% endblock %}
+
+{% block content %}
+<div class="columns">
+
+  {# Sidebar #}
+  <div class="column is-2">
+    <aside class="menu">
+      <p class="menu-label">Status</p>
+      <ul class="menu-list">
+        <li><a href="?status=published" class="{% if current_status == 'published' %}is-active{% endif %}">Published</a></li>
+        <li><a href="?status=draft" class="{% if current_status == 'draft' %}is-active{% endif %}">Drafts</a></li>
+        <li><a href="?status=archived" class="{% if current_status == 'archived' %}is-active{% endif %}">Archived</a></li>
+      </ul>
+      {% if tags %}
+      <p class="menu-label mt-4">Tags</p>
+      <ul class="menu-list">
+        {% for tag in tags %}
+        <li>
+          <a href="?tag={{ tag.slug }}&status={{ current_status }}"
+             class="{% if current_tag == tag.slug %}is-active{% endif %}">
+            {{ tag.name }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </aside>
+  </div>
+
+  {# Document list #}
+  <div class="column" id="document-list">
+    {% include "documents/partials/document_list.html" %}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}New Document{% endblock %}
+
+{% block content %}
+<div class="columns">
+  <div class="column is-8 is-offset-2">
+
+    <h1 class="title">New Document</h1>
+
+    {% if error %}
+    <div class="notification is-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/new/">
+      {% csrf_token %}
+
+      <div class="field">
+        <label class="label">Title</label>
+        <div class="control">
+          <input class="input" type="text" name="title" placeholder="Document title" autofocus required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Status</label>
+        <div class="control">
+          <div class="select">
+            <select name="status">
+              {% for value, label in statuses %}
+              <option value="{{ value }}" {% if value == 'draft' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Tags <span class="has-text-weight-normal has-text-grey">(comma-separated)</span></label>
+        <div class="control">
+          <input class="input" type="text" name="tags" placeholder="retrospective, planning, team">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Body <span class="has-text-weight-normal has-text-grey">(Markdown)</span></label>
+        <div class="control">
+          <textarea class="textarea is-family-monospace" name="body" rows="20" placeholder="# Write in Markdown..."></textarea>
+        </div>
+      </div>
+
+      <div class="field is-grouped">
+        <div class="control">
+          <button type="submit" class="button is-primary">Create Document</button>
+        </div>
+        <div class="control">
+          <a href="/" class="button is-light">Cancel</a>
+        </div>
+      </div>
+    </form>
+
+  </div>
+</div>
+{% endblock %}

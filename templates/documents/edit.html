@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Edit — {{ document.title }}{% endblock %}
+
+{% block content %}
+<div class="columns">
+  <div class="column is-8 is-offset-2">
+
+    <nav class="breadcrumb mb-4">
+      <ul>
+        <li><a href="/">Documents</a></li>
+        <li><a href="{{ document.get_absolute_url }}">{{ document.title }}</a></li>
+        <li class="is-active"><a>Edit</a></li>
+      </ul>
+    </nav>
+
+    <h1 class="title">Edit Document</h1>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="field">
+        <label class="label">Title</label>
+        <div class="control">
+          <input class="input" type="text" name="title" value="{{ document.title }}" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Status</label>
+        <div class="control">
+          <div class="select">
+            <select name="status">
+              {% for value, label in statuses %}
+              <option value="{{ value }}" {% if document.status == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Tags</label>
+        <div class="control">
+          <input class="input" type="text" name="tags" value="{{ tag_str }}" placeholder="retrospective, planning">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label">Body <span class="has-text-weight-normal has-text-grey">(Markdown)</span></label>
+        <div class="control">
+          <textarea class="textarea is-family-monospace" name="body" rows="24">{{ document.body }}</textarea>
+        </div>
+      </div>
+
+      <div class="field is-grouped">
+        <div class="control">
+          <button type="submit" class="button is-primary">Save</button>
+        </div>
+        <div class="control">
+          <a href="{{ document.get_absolute_url }}" class="button is-light">Cancel</a>
+        </div>
+      </div>
+    </form>
+
+  </div>
+</div>
+{% endblock %}

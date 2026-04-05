@@ -1,0 +1,36 @@
+[project]
+name = "nexus"
+version = "0.1.0"
+description = "Self-hosted document wiki for humans and AI agents"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "django-mcp-server>=0.5",
+    "markdown>=3.7",
+    "python-dotenv>=1.0",
+    "openai>=1.0",
+    "whitenoise>=6.8",
+    "gunicorn>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9",
+    "pytest>=8",
+    "pytest-django>=4",
+    "django-debug-toolbar>=5",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = "tests.py test_*.py"

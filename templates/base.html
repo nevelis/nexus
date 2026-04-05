@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Nexus{% endblock %} — Nexus</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <style>
+    .content pre { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 1rem; overflow-x: auto; }
+    .content code { background: #313244; color: #cba6f7; padding: 0.1em 0.3em; border-radius: 3px; }
+    .document-meta { font-size: 0.85rem; color: #888; }
+    .tag-list .tag { margin-right: 0.25rem; }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    .main-content { flex: 1; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<nav class="navbar is-dark" role="navigation">
+  <div class="container">
+    <div class="navbar-brand">
+      <a class="navbar-item has-text-weight-bold" href="/">
+        📄 Nexus
+      </a>
+      <a role="button" class="navbar-burger" data-target="navMenu">
+        <span></span><span></span><span></span><span></span>
+      </a>
+    </div>
+    <div id="navMenu" class="navbar-menu">
+      <div class="navbar-start">
+        <a class="navbar-item" href="/">Documents</a>
+        <a class="navbar-item" href="/?status=draft">Drafts</a>
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <div class="field has-addons">
+            <div class="control">
+              <input class="input is-small" type="text" placeholder="Search…"
+                name="q" id="search-input"
+                hx-get="/" hx-trigger="keyup changed delay:300ms" hx-target="#document-list"
+                hx-include="[name='q']">
+            </div>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <a class="button is-primary is-small" href="/new/">New Document</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<main class="main-content">
+  <div class="container mt-5 px-4">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<footer class="footer py-4 mt-6">
+  <div class="container has-text-centered has-text-grey is-size-7">
+    Nexus — self-hosted document wiki
+  </div>
+</footer>
+
+<script>
+  // Navbar burger toggle
+  document.addEventListener('DOMContentLoaded', () => {
+    const burger = document.querySelector('.navbar-burger');
+    const menu = document.getElementById(burger?.dataset.target);
+    burger?.addEventListener('click', () => {
+      burger.classList.toggle('is-active');
+      menu?.classList.toggle('is-active');
+    });
+  });
+</script>
+</body>
+</html>

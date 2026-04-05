@@ -1,0 +1,35 @@
+{% if documents %}
+  {% for doc in documents %}
+  <div class="box mb-3">
+    <div class="is-flex is-justify-content-space-between is-align-items-start">
+      <div>
+        <h2 class="title is-5 mb-1">
+          <a href="{{ doc.get_absolute_url }}">{{ doc.title }}</a>
+        </h2>
+        <p class="document-meta mb-2">
+          Updated {{ doc.updated_at|date:"M j, Y" }}
+          {% if doc.status != 'published' %}
+          · <span class="tag is-warning is-small">{{ doc.status }}</span>
+          {% endif %}
+        </p>
+        {% if doc.tags.all %}
+        <div class="tag-list">
+          {% for tag in doc.tags.all %}
+          <a href="?tag={{ tag.slug }}" class="tag is-light is-info is-small">{{ tag.name }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      <a href="{{ doc.get_absolute_url }}edit/" class="button is-small is-light ml-3">Edit</a>
+    </div>
+    <p class="mt-2 is-size-7 has-text-grey">{{ doc.body|truncatewords:30 }}</p>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="notification is-light">
+    <p>No documents found.
+      {% if query %}for <strong>{{ query }}</strong>{% endif %}
+      <a href="/new/">Create one?</a>
+    </p>
+  </div>
+{% endif %}
