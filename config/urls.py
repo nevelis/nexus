@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.http import JsonResponse
-from django.urls import path, include
+from django.urls import include, path
 
 
 def health(request):
@@ -11,7 +11,7 @@ def health(request):
 urlpatterns = [
     path("health/", health, name="health"),
     path("admin/", admin.site.urls),
-    path("", include("mcp_server.urls")),   # Registers /mcp/ endpoint
+    path("", include("mcp_server.urls")),  # Registers /mcp/ endpoint
     path("search/", include("search.urls")),
     path("", include("documents.urls")),
 ]

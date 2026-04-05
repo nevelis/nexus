@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+
 from documents.models import Document
 
 
@@ -12,24 +13,21 @@ def semantic_search(request):
         return JsonResponse({"results": [], "error": "query required"}, status=400)
 
     from .embeddings import generate_embedding
+
     embedding = generate_embedding(query)
 
     if embedding:
         # Vector similarity search
         from pgvector.django import CosineDistance
+
         docs = (
-            Document.objects
-            .filter(status="published", embedding__isnull=False)
+            Document.objects.filter(status="published", embedding__isnull=False)
             .annotate(distance=CosineDistance("embedding", embedding))
             .order_by("distance")[:limit]
         )
     else:
         # Fallback: keyword search
-        docs = (
-            Document.objects
-            .filter(status="published")
-            .filter(title__icontains=query)[:limit]
-        )
+        docs = Document.objects.filter(status="published").filter(title__icontains=query)[:limit]
 
     results = [
         {

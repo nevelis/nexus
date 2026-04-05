@@ -1,6 +1,7 @@
+import os
+import re
 from pathlib import Path
 
-import os
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -61,7 +62,6 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database — PostgreSQL with pgvector
 _db_url = os.environ.get("DATABASE_URL", "postgresql://nexus:nexus@localhost:5432/nexus")
 # Parse DATABASE_URL manually for psycopg
-import re
 _match = re.match(r"postgresql://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)", _db_url)
 if _match:
     _user, _password, _host, _port, _name = _match.groups()

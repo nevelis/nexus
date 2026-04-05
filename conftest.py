@@ -5,6 +5,7 @@ Mocks embedding generation globally so tests never load the ML model.
 All tests default to the keyword-fallback code path. Tests that specifically
 need to exercise the embedding module mock at the SentenceTransformer level.
 """
+
 import pytest
 
 

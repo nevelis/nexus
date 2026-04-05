@@ -1,12 +1,11 @@
 """Tests for the search app: embedding generation and search view."""
-import numpy as np
-import pytest
+
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase, Client
+import numpy as np
+from django.test import Client, TestCase
 
 from documents.models import Document
-
 
 # ── Embedding module ─────────────────────────────────────────────────────────
 
@@ -25,6 +24,7 @@ class TestGenerateEmbedding(TestCase):
 
     def test_returns_list_of_floats(self):
         import search.embeddings as emb
+
         mock_model = self._make_mock_model()
         with patch.object(emb, "_get_model", return_value=mock_model):
             result = emb.generate_embedding("hello world")
@@ -33,6 +33,7 @@ class TestGenerateEmbedding(TestCase):
 
     def test_returns_correct_dimensions(self):
         import search.embeddings as emb
+
         mock_model = self._make_mock_model(dims=384)
         with patch.object(emb, "_get_model", return_value=mock_model):
             result = emb.generate_embedding("some text")
@@ -40,6 +41,7 @@ class TestGenerateEmbedding(TestCase):
 
     def test_passes_text_to_encode(self):
         import search.embeddings as emb
+
         mock_model = self._make_mock_model()
         with patch.object(emb, "_get_model", return_value=mock_model):
             emb.generate_embedding("my document text")
@@ -47,12 +49,14 @@ class TestGenerateEmbedding(TestCase):
 
     def test_returns_none_on_model_error(self):
         import search.embeddings as emb
+
         with patch.object(emb, "_get_model", side_effect=RuntimeError("model load failed")):
             result = emb.generate_embedding("test")
         self.assertIsNone(result)
 
     def test_returns_none_on_encode_error(self):
         import search.embeddings as emb
+
         mock_model = MagicMock()
         mock_model.encode.side_effect = RuntimeError("encode failed")
         with patch.object(emb, "_get_model", return_value=mock_model):
@@ -62,6 +66,7 @@ class TestGenerateEmbedding(TestCase):
     def test_model_lazy_loaded(self):
         """_get_model is not called until generate_embedding is first invoked."""
         import search.embeddings as emb
+
         mock_model = self._make_mock_model()
         with patch("search.embeddings.SentenceTransformer", return_value=mock_model) as mock_cls:
             # Reset the cached model so we can observe the lazy load

@@ -1,4 +1,5 @@
 import uuid
+
 from django.db import models
 from django.utils.text import slugify
 from pgvector.django import VectorField
@@ -56,4 +57,5 @@ class Document(models.Model):
 
     def get_absolute_url(self):
         from django.urls import reverse
+
         return reverse("documents:detail", kwargs={"slug": self.slug})

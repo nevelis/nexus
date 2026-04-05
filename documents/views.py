@@ -1,6 +1,5 @@
 import markdown as md
-from django.shortcuts import get_object_or_404, render, redirect
-from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
 from .models import Document, Tag
@@ -92,6 +91,7 @@ def document_edit(request, slug):
 
         if request.headers.get("HX-Request"):
             from django.http import HttpResponse
+
             response = HttpResponse(status=204)
             response["HX-Redirect"] = doc.get_absolute_url()
             return response
@@ -111,6 +111,7 @@ def _schedule_embedding(doc):
     """Queue an embedding update. Runs inline for now; swap for Celery task later."""
     try:
         from search.embeddings import generate_embedding
+
         embedding = generate_embedding(f"{doc.title}\n\n{doc.body}")
         doc.embedding = embedding
         doc.save(update_fields=["embedding"])

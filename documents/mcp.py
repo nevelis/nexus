@@ -4,7 +4,9 @@ MCP tools for Nexus document operations.
 Autodiscovered by django-mcp-server when it starts up.
 Tools are registered on the global MCP server and exposed at /mcp/.
 """
+
 from mcp_server import mcp_server as mcp
+
 from .models import Document, Tag
 
 
@@ -24,10 +26,12 @@ def search_documents(query: str, limit: int = 10, status: str = "published") -> 
     qs = Document.objects.filter(status=status)
 
     from search.embeddings import generate_embedding
+
     embedding = generate_embedding(query)
 
     if embedding:
         from pgvector.django import CosineDistance
+
         docs = (
             qs.filter(embedding__isnull=False)
             .annotate(distance=CosineDistance("embedding", embedding))
@@ -35,22 +39,24 @@ def search_documents(query: str, limit: int = 10, status: str = "published") -> 
         )
         results = []
         for doc in docs:
-            results.append({
-                "id": str(doc.id),
-                "title": doc.title,
-                "slug": doc.slug,
-                "status": doc.status,
-                "excerpt": doc.body[:300],
-                "score": round(float(1 - doc.distance), 4),
-                "tags": list(doc.tags.values_list("name", flat=True)),
-                "updated_at": doc.updated_at.isoformat(),
-            })
+            results.append(
+                {
+                    "id": str(doc.id),
+                    "title": doc.title,
+                    "slug": doc.slug,
+                    "status": doc.status,
+                    "excerpt": doc.body[:300],
+                    "score": round(float(1 - doc.distance), 4),
+                    "tags": list(doc.tags.values_list("name", flat=True)),
+                    "updated_at": doc.updated_at.isoformat(),
+                }
+            )
         return results
     else:
         # Keyword fallback
-        docs = (
-            qs.filter(title__icontains=query) | qs.filter(body__icontains=query)
-        ).distinct()[:limit]
+        docs = (qs.filter(title__icontains=query) | qs.filter(body__icontains=query)).distinct()[
+            :limit
+        ]
         return [
             {
                 "id": str(doc.id),
@@ -124,6 +130,7 @@ def create_document(
     # Generate embedding inline
     try:
         from search.embeddings import generate_embedding
+
         embedding = generate_embedding(f"{doc.title}\n\n{doc.body}")
         if embedding:
             doc.embedding = embedding
@@ -187,6 +194,7 @@ def update_document(
     if title is not None or body is not None:
         try:
             from search.embeddings import generate_embedding
+
             embedding = generate_embedding(f"{doc.title}\n\n{doc.body}")
             if embedding:
                 doc.embedding = embedding

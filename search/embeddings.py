@@ -5,6 +5,7 @@ once on first use and reused for every subsequent call within the same process.
 The model is baked into the Docker image at build time so there's no cold-start
 download in production.
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ def _get_model():
     global _model
     if _model is None:
         from sentence_transformers import SentenceTransformer
+
         _model = SentenceTransformer(_MODEL_NAME)
     return _model
 
