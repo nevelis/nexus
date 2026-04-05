@@ -104,9 +104,10 @@ resource "kubernetes_config_map" "nexus" {
   data = {
     DJANGO_SETTINGS_MODULE = "config.settings"
     DEBUG                  = "false"
-    # Include localhost/127.0.0.1 so K8s liveness/readiness probes succeed.
-    # Probes use the pod IP directly, not the public hostname.
-    ALLOWED_HOSTS = "${local.hostname},localhost,127.0.0.1"
+    # Use wildcard in the pod — Traefik handles hostname-based routing at the
+    # ingress level, so Django doesn't need to validate Host headers here.
+    # Pod IPs and localhost addresses vary per pod; * is the standard K8s pattern.
+    ALLOWED_HOSTS = "*"
     PORT                   = "8000"
     # sentence-transformers model is baked into the image — no API key needed
     HF_HOME = "/app/.cache/huggingface"
