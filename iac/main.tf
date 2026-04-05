@@ -83,32 +83,17 @@ locals {
   }
 }
 
-# ── Managed PostgreSQL ─────────────────────────────────────────────────────────
-# Single-node cluster — same tier as AGAST dev. pgvector extension is available
-# on DO managed postgres 14+ by default; enabled via VectorExtension() migration.
-resource "digitalocean_database_cluster" "postgres" {
-  name    = "nexus"
-  engine  = "pg"
-  version = "16"
-  size    = var.db_size
-  region  = data.terraform_remote_state.substrate.outputs.region
-
-  node_count = 1
-
-  maintenance_window {
-    hour = "03:00:00"
-    day  = "sunday"
-  }
+# ── Shared PostgreSQL cluster (lab-dev) ───────────────────────────────────────
+# The DO account cannot create new database clusters (account hold).
+# lab-dev is the shared dev postgres cluster — adele, agast, and mailotron all
+# live here. The `nexus` database was created manually via doctl.
+data "digitalocean_database_cluster" "lab_dev" {
+  name = "lab-dev"
 }
 
-# Restrict database access to the DOKS cluster nodes only.
-resource "digitalocean_database_firewall" "postgres" {
-  cluster_id = digitalocean_database_cluster.postgres.id
-
-  rule {
-    type  = "k8s"
-    value = data.terraform_remote_state.substrate.outputs.cluster_id
-  }
+resource "digitalocean_database_db" "nexus" {
+  cluster_id = data.digitalocean_database_cluster.lab_dev.id
+  name       = "nexus"
 }
 
 # ── ConfigMap ──────────────────────────────────────────────────────────────────
@@ -136,8 +121,14 @@ resource "kubernetes_secret" "nexus" {
   }
 
   data = {
-    SECRET_KEY   = var.django_secret_key
-    DATABASE_URL = digitalocean_database_cluster.postgres.uri
+    SECRET_KEY = var.django_secret_key
+    # Build the connection URI pointing at the nexus database on the shared lab-dev cluster.
+    # The cluster URI points to `defaultdb`; replace with `nexus` + sslmode.
+    DATABASE_URL = replace(
+      data.digitalocean_database_cluster.lab_dev.uri,
+      "/defaultdb",
+      "/nexus"
+    )
   }
 
   type = "Opaque"

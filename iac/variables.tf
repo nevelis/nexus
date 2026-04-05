@@ -33,12 +33,6 @@ variable "django_secret_key" {
   sensitive   = true
 }
 
-variable "db_size" {
-  description = "DigitalOcean managed database size slug"
-  type        = string
-  default     = "db-s-1vcpu-1gb"  # 1 vCPU, 1 GiB RAM — $15/mo
-}
-
 variable "memory_request" {
   description = "Pod memory request — bumped vs AGAST defaults due to sentence-transformers model (~200MB)"
   type        = string
