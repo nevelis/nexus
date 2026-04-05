@@ -114,7 +114,18 @@ jobs:
         run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Install registry pull secret
-        run: doctl registry kubernetes-manifest | kubectl apply -f - --namespace ${{ env.NAMESPACE }}
+        # `doctl registry kubernetes-manifest` always outputs namespace:kube-system / name:registry-amazingland
+        # which kubectl rejects when applied to a different namespace. Instead, copy the
+        # `amazingland` secret that already exists cluster-wide from kube-system.
+        run: |
+          kubectl get secret amazingland -n kube-system -o json | \
+            python3 -c "
+          import sys, json
+          s = json.load(sys.stdin)
+          for k in ['resourceVersion', 'uid', 'creationTimestamp', 'managedFields']:
+              s['metadata'].pop(k, None)
+          s['metadata']['namespace'] = '${{ env.NAMESPACE }}'
+          print(json.dumps(s))" | kubectl apply -f -
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
