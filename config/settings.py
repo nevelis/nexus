@@ -1,7 +1,7 @@
 import os
-import re
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -60,29 +60,13 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # Database — PostgreSQL with pgvector
-_db_url = os.environ.get("DATABASE_URL", "postgresql://nexus:nexus@localhost:5432/nexus")
-# Parse DATABASE_URL manually for psycopg
-_match = re.match(r"postgresql://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)", _db_url)
-if _match:
-    _user, _password, _host, _port, _name = _match.groups()
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": _name,
-            "USER": _user,
-            "PASSWORD": _password,
-            "HOST": _host,
-            "PORT": _port or "5432",
-        }
-    }
-else:
-    # Fallback to SQLite for initial development without Postgres
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+# dj_database_url handles sslmode and all URL edge cases reliably
+DATABASES = {
+    "default": dj_database_url.config(
+        default="postgresql://nexus:nexus@localhost:5432/nexus",
+        conn_max_age=600,
+    )
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
