@@ -33,8 +33,8 @@ class Document(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     tags = models.ManyToManyField(Tag, blank=True, related_name="documents")
 
-    # Vector embedding — 1536 dims for text-embedding-3-small
-    embedding = VectorField(dimensions=1536, null=True, blank=True)
+    # Vector embedding — 384 dims for all-MiniLM-L6-v2 (sentence-transformers)
+    embedding = VectorField(dimensions=384, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

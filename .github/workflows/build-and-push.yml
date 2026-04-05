@@ -1,0 +1,78 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches-ignore:
+      - main  # main is handled by test-and-deploy.yml (tests first, then build+deploy)
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:  # Called by test-and-deploy.yml for main branch builds
+
+env:
+  REGISTRY:   registry.digitalocean.com/amazingland
+  IMAGE_NAME: nexus
+
+jobs:
+  build-and-push:
+    name: Build and Push to DOCR
+    runs-on: ubuntu-latest
+    environment: Nexus
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Determine image tags
+        id: tags
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "tag=main-${{ github.sha }}"   >> $GITHUB_OUTPUT
+            echo "latest_tag=latest"            >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.event.pull_request.number }}" ]; then
+            echo "tag=pr-${{ github.event.pull_request.number }}-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "latest_tag=pr-${{ github.event.pull_request.number }}-latest"     >> $GITHUB_OUTPUT
+          else
+            BRANCH_SLUG=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c1-40)
+            echo "tag=branch-${BRANCH_SLUG}-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "latest_tag=branch-${BRANCH_SLUG}-latest"     >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build
+        env:
+          IMAGE:      ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          TAG:        ${{ steps.tags.outputs.tag }}
+          LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --cache-from type=registry,ref=$IMAGE:$LATEST_TAG \
+            --cache-from type=registry,ref=$IMAGE:buildcache \
+            --cache-to   type=registry,ref=$IMAGE:buildcache,mode=max \
+            --tag "$IMAGE:$TAG" \
+            --tag "$IMAGE:$LATEST_TAG" \
+            --push \
+            --progress=plain \
+            .
+          echo "image=$IMAGE:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Build Summary"                                                              >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ steps.build.outputs.image }}\`"                           >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.latest_tag }}\`" >> $GITHUB_STEP_SUMMARY

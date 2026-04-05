@@ -1,0 +1,148 @@
+name: Test and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY:   registry.digitalocean.com/amazingland
+  IMAGE_NAME: nexus
+  CLUSTER:    agast-dev          # DOKS cluster (shared with AGAST)
+  NAMESPACE:  nexus              # Single environment — no stage/prod split
+
+jobs:
+  # ── Python tests ───────────────────────────────────────────────────────────
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB:       nexus_test
+          POSTGRES_USER:     nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus_test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: |
+          pytest --tb=short -v \
+            --cov=documents --cov=search --cov=config \
+            --cov-report=term-missing \
+            --cov-fail-under=80
+
+  # ── Build + push image ─────────────────────────────────────────────────────
+  build-image:
+    name: Build Docker Image
+    needs: python-tests
+    uses: ./.github/workflows/build-and-push.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to nexus.lab.amazingland.live
+    needs: build-image
+    runs-on: ubuntu-latest
+    environment: Nexus
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Get cluster kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ env.CLUSTER }}
+
+      - name: Ensure nexus namespace exists
+        # Namespace must exist before `terraform init` (backend stores state there)
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Install registry pull secret
+        run: doctl registry kubernetes-manifest | kubectl apply -f - --namespace ${{ env.NAMESPACE }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform init
+        working-directory: ./iac
+        run: |
+          terraform init \
+            -backend-config="config_path=$HOME/.kube/config" \
+            -input=false
+
+      - name: Deploy via Terraform
+        working-directory: ./iac
+        env:
+          TF_VAR_do_token:          ${{ secrets.DIGITALOCEAN_TOKEN }}
+          TF_VAR_spaces_access_key: ${{ secrets.SPACES_ACCESS_KEY }}
+          TF_VAR_spaces_secret_key: ${{ secrets.SPACES_SECRET_KEY }}
+          TF_VAR_django_secret_key: ${{ secrets.DJANGO_SECRET_KEY }}
+          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
+          TF_VAR_image:             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/nexus-backend -n ${{ env.NAMESPACE }} --timeout=5m
+          kubectl get pods -n ${{ env.NAMESPACE }}
+
+      - name: Report deployment URL
+        run: |
+          echo "✅ Deployed to https://nexus.lab.amazingland.live"
+          echo "🤖 MCP endpoint: https://nexus.lab.amazingland.live/mcp/"
+
+  # ── Summary ────────────────────────────────────────────────────────────────
+  summary:
+    name: Pipeline Summary
+    needs: [python-tests, build-image, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Pipeline Summary"                                                        >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}"                                      >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`"                                       >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://nexus.lab.amazingland.live"                             >> $GITHUB_STEP_SUMMARY
+          echo ""                                                                            >> $GITHUB_STEP_SUMMARY
+          echo "| Job          | Result |"                                                  >> $GITHUB_STEP_SUMMARY
+          echo "|--------------|--------|"                                                  >> $GITHUB_STEP_SUMMARY
+          echo "| Python Tests | ${{ needs.python-tests.result }} |"                       >> $GITHUB_STEP_SUMMARY
+          echo "| Build Image  | ${{ needs.build-image.result }}  |"                       >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy       | ${{ needs.deploy.result }}       |"                       >> $GITHUB_STEP_SUMMARY

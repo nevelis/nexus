@@ -102,10 +102,10 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Embedding settings
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "1536"))
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+# Embedding settings — sentence-transformers, no API key required
+# Model is baked into the Docker image; dimensions must match VectorField in models.py
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
 
 # django-mcp-server config
 DJANGO_MCP_ENDPOINT = "mcp/"
