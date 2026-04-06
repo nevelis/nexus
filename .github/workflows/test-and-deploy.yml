@@ -152,7 +152,7 @@ jobs:
 
       - name: Verify rollout
         run: |
-          kubectl rollout status deployment/nexus-backend -n ${{ env.NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/nexus-backend -n ${{ env.NAMESPACE }} --timeout=10m
           kubectl get pods -n ${{ env.NAMESPACE }}
 
       - name: Report deployment URL

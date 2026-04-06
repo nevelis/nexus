@@ -61,9 +61,9 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
             return results
         else:
             # Keyword fallback
-            docs = (qs.filter(title__icontains=query) | qs.filter(body__icontains=query)).distinct()[
-                :_limit
-            ]
+            docs = (
+                qs.filter(title__icontains=query) | qs.filter(body__icontains=query)
+            ).distinct()[:_limit]
             return [
                 {
                     "id": str(doc.id),
