@@ -7,24 +7,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast dependency installation
 RUN pip install uv
 
-# Install Python dependencies before copying app code (better layer caching)
-COPY pyproject.toml .
-RUN uv pip install --system --no-cache -e "."
+# ── Pre-install heavy ML deps (torch + sentence-transformers) ────────────────
+# These are installed BEFORE COPY pyproject.toml so this layer is cached even
+# when app code or pyproject.toml changes. torch is ~1.5GB — keeping it in a
+# stable layer means CI builds only re-install the fast lightweight deps on
+# most commits.
+#
+# Pin to a minor version range so the cache only busts on intentional bumps.
+RUN uv pip install --system --no-cache "sentence-transformers>=3.0,<4"
 
-# ── Bake in the sentence-transformers model ────────────────────────────────
-# The model is downloaded once at image build time so pods start instantly
-# with no cold-start download. HF_HOME is set to a path inside /app so it's
-# owned by the nexus user created below.
+# ── Bake the embedding model into the image ──────────────────────────────────
+# Model is downloaded once at build time; pods start instantly with no
+# cold-start download. HF_HOME is inside /app so the nexus user owns it.
 ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
-# Copy application code
-COPY . .
+# ── Remaining lightweight app deps ───────────────────────────────────────────
+# Separate COPY so Docker can cache this layer when only source files change.
+# sentence-transformers is already installed; uv resolves and skips it.
+COPY pyproject.toml .
+RUN uv pip install --system --no-cache \
+    "django>=5.2,<7" \
+    "psycopg[binary]>=3.2" \
+    "pgvector>=0.3" \
+    "django-mcp-server>=0.5" \
+    "markdown>=3.7" \
+    "python-dotenv>=1.0" \
+    "dj-database-url>=2.0" \
+    "whitenoise>=6.8" \
+    "gunicorn"
 
-# Collect static files (whitenoise serves them; needs SECRET_KEY default in settings)
+# ── Copy application source and collect static files ─────────────────────────
+COPY . .
 RUN python manage.py collectstatic --noinput
 
 # Create a non-root user and transfer ownership
