@@ -78,7 +78,7 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
                 for doc in docs
             ]
 
-    return await sync_to_async(_search)()
+    return await sync_to_async(_search, thread_sensitive=False)()
 
 
 @mcp.tool()
@@ -109,7 +109,7 @@ async def get_document(slug: str) -> dict:
             "updated_at": doc.updated_at.isoformat(),
         }
 
-    return await sync_to_async(_get)()
+    return await sync_to_async(_get, thread_sensitive=False)()
 
 
 @mcp.tool()
@@ -162,7 +162,7 @@ async def create_document(
             "created_at": doc.created_at.isoformat(),
         }
 
-    return await sync_to_async(_create)()
+    return await sync_to_async(_create, thread_sensitive=False)()
 
 
 @mcp.tool()
@@ -230,7 +230,7 @@ async def update_document(
             "updated_at": doc.updated_at.isoformat(),
         }
 
-    return await sync_to_async(_update)()
+    return await sync_to_async(_update, thread_sensitive=False)()
 
 
 @mcp.tool()
@@ -260,7 +260,7 @@ async def archive_document(slug: str) -> dict:
             "message": f"Document '{doc.title}' archived.",
         }
 
-    return await sync_to_async(_archive)()
+    return await sync_to_async(_archive, thread_sensitive=False)()
 
 
 @mcp.tool()
@@ -296,4 +296,4 @@ async def list_documents(status: str = "published", limit: int = 20) -> list[dic
             for doc in qs[:_limit]
         ]
 
-    return await sync_to_async(_list)()
+    return await sync_to_async(_list, thread_sensitive=False)()
