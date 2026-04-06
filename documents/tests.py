@@ -296,33 +296,33 @@ class TestMCPGetDocument(TestCase):
             status="published",
         )
 
-    def test_returns_document_data(self):
+    async def test_returns_document_data(self):
         from documents.mcp import get_document
 
-        result = get_document("mcp-doc")
+        result = await get_document("mcp-doc")
         self.assertEqual(result["title"], "MCP Doc")
         self.assertEqual(result["body"], "body content")
         self.assertEqual(result["status"], "published")
 
-    def test_includes_required_fields(self):
+    async def test_includes_required_fields(self):
         from documents.mcp import get_document
 
-        result = get_document("mcp-doc")
+        result = await get_document("mcp-doc")
         for field in ("id", "title", "slug", "body", "status", "tags", "created_at", "updated_at"):
             self.assertIn(field, result)
 
-    def test_returns_error_for_missing_slug(self):
+    async def test_returns_error_for_missing_slug(self):
         from documents.mcp import get_document
 
-        result = get_document("no-such-slug")
+        result = await get_document("no-such-slug")
         self.assertIn("error", result)
 
-    def test_includes_tags(self):
+    async def test_includes_tags(self):
         from documents.mcp import get_document
 
-        tag = Tag.objects.create(name="mytag")
-        self.doc.tags.add(tag)
-        result = get_document("mcp-doc")
+        tag = await Tag.objects.acreate(name="mytag")
+        await self.doc.tags.aadd(tag)
+        result = await get_document("mcp-doc")
         self.assertIn("mytag", result["tags"])
 
 
@@ -330,38 +330,38 @@ class TestMCPGetDocument(TestCase):
 
 
 class TestMCPCreateDocument(TestCase):
-    def test_creates_document_with_defaults(self):
+    async def test_creates_document_with_defaults(self):
         from documents.mcp import create_document
 
-        result = create_document(title="New Doc", body="some content")
+        result = await create_document(title="New Doc", body="some content")
         self.assertEqual(result["title"], "New Doc")
         self.assertEqual(result["status"], "draft")
         self.assertIn("id", result)
         self.assertIn("slug", result)
 
-    def test_creates_document_with_custom_status(self):
+    async def test_creates_document_with_custom_status(self):
         from documents.mcp import create_document
 
-        result = create_document(title="Published", body="body", status="published")
+        result = await create_document(title="Published", body="body", status="published")
         self.assertEqual(result["status"], "published")
 
-    def test_creates_document_with_tags(self):
+    async def test_creates_document_with_tags(self):
         from documents.mcp import create_document
 
-        result = create_document(title="Tagged", body="body", tags=["python", "django"])
+        result = await create_document(title="Tagged", body="body", tags=["python", "django"])
         self.assertEqual(set(result["tags"]), {"python", "django"})
 
-    def test_rejects_invalid_status(self):
+    async def test_rejects_invalid_status(self):
         from documents.mcp import create_document
 
-        result = create_document(title="Bad", body="body", status="invalid")
+        result = await create_document(title="Bad", body="body", status="invalid")
         self.assertIn("error", result)
 
-    def test_document_persisted_to_db(self):
+    async def test_document_persisted_to_db(self):
         from documents.mcp import create_document
 
-        create_document(title="Persisted", body="body")
-        self.assertTrue(Document.objects.filter(title="Persisted").exists())
+        await create_document(title="Persisted", body="body")
+        self.assertTrue(await Document.objects.filter(title="Persisted").aexists())
 
 
 # ── MCP: update_document ─────────────────────────────────────────────────────
@@ -376,51 +376,51 @@ class TestMCPUpdateDocument(TestCase):
             status="draft",
         )
 
-    def test_updates_title(self):
+    async def test_updates_title(self):
         from documents.mcp import update_document
 
-        result = update_document("update-me", title="New Title")
+        result = await update_document("update-me", title="New Title")
         self.assertEqual(result["title"], "New Title")
-        self.doc.refresh_from_db()
+        await self.doc.arefresh_from_db()
         self.assertEqual(self.doc.title, "New Title")
 
-    def test_updates_body(self):
+    async def test_updates_body(self):
         from documents.mcp import update_document
 
-        update_document("update-me", body="new body")
-        self.doc.refresh_from_db()
+        await update_document("update-me", body="new body")
+        await self.doc.arefresh_from_db()
         self.assertEqual(self.doc.body, "new body")
 
-    def test_updates_status(self):
+    async def test_updates_status(self):
         from documents.mcp import update_document
 
-        result = update_document("update-me", status="published")
+        result = await update_document("update-me", status="published")
         self.assertEqual(result["status"], "published")
 
-    def test_updates_tags(self):
+    async def test_updates_tags(self):
         from documents.mcp import update_document
 
-        result = update_document("update-me", tags=["tag1", "tag2"])
+        result = await update_document("update-me", tags=["tag1", "tag2"])
         self.assertEqual(set(result["tags"]), {"tag1", "tag2"})
 
-    def test_clears_tags_with_empty_list(self):
+    async def test_clears_tags_with_empty_list(self):
         from documents.mcp import update_document
 
-        tag = Tag.objects.create(name="existing")
-        self.doc.tags.add(tag)
-        result = update_document("update-me", tags=[])
+        tag = await Tag.objects.acreate(name="existing")
+        await self.doc.tags.aadd(tag)
+        result = await update_document("update-me", tags=[])
         self.assertEqual(result["tags"], [])
 
-    def test_returns_error_for_missing_document(self):
+    async def test_returns_error_for_missing_document(self):
         from documents.mcp import update_document
 
-        result = update_document("does-not-exist")
+        result = await update_document("does-not-exist")
         self.assertIn("error", result)
 
-    def test_returns_error_for_invalid_status(self):
+    async def test_returns_error_for_invalid_status(self):
         from documents.mcp import update_document
 
-        result = update_document("update-me", status="nonsense")
+        result = await update_document("update-me", status="nonsense")
         self.assertIn("error", result)
 
 
@@ -436,25 +436,25 @@ class TestMCPArchiveDocument(TestCase):
             status="published",
         )
 
-    def test_sets_status_to_archived(self):
+    async def test_sets_status_to_archived(self):
         from documents.mcp import archive_document
 
-        result = archive_document("archive-me")
+        result = await archive_document("archive-me")
         self.assertEqual(result["status"], "archived")
-        self.doc.refresh_from_db()
+        await self.doc.arefresh_from_db()
         self.assertEqual(self.doc.status, "archived")
 
-    def test_returns_document_id_and_slug(self):
+    async def test_returns_document_id_and_slug(self):
         from documents.mcp import archive_document
 
-        result = archive_document("archive-me")
+        result = await archive_document("archive-me")
         self.assertIn("id", result)
         self.assertEqual(result["slug"], "archive-me")
 
-    def test_returns_error_for_missing_document(self):
+    async def test_returns_error_for_missing_document(self):
         from documents.mcp import archive_document
 
-        result = archive_document("no-such-slug")
+        result = await archive_document("no-such-slug")
         self.assertIn("error", result)
 
 
@@ -467,44 +467,44 @@ class TestMCPListDocuments(TestCase):
         Document.objects.create(title="Draft", body="b", status="draft")
         Document.objects.create(title="Archived", body="b", status="archived")
 
-    def test_defaults_to_published(self):
+    async def test_defaults_to_published(self):
         from documents.mcp import list_documents
 
-        result = list_documents()
+        result = await list_documents()
         titles = [d["title"] for d in result]
         self.assertIn("Published", titles)
         self.assertNotIn("Draft", titles)
 
-    def test_filter_by_draft(self):
+    async def test_filter_by_draft(self):
         from documents.mcp import list_documents
 
-        result = list_documents(status="draft")
+        result = await list_documents(status="draft")
         titles = [d["title"] for d in result]
         self.assertIn("Draft", titles)
         self.assertNotIn("Published", titles)
 
-    def test_status_all_returns_everything(self):
+    async def test_status_all_returns_everything(self):
         from documents.mcp import list_documents
 
-        result = list_documents(status="all")
+        result = await list_documents(status="all")
         self.assertEqual(len(result), 3)
 
-    def test_limit_is_respected(self):
+    async def test_limit_is_respected(self):
         from documents.mcp import list_documents
 
-        result = list_documents(status="all", limit=2)
+        result = await list_documents(status="all", limit=2)
         self.assertEqual(len(result), 2)
 
-    def test_returns_error_for_invalid_status(self):
+    async def test_returns_error_for_invalid_status(self):
         from documents.mcp import list_documents
 
-        result = list_documents(status="bad-status")
+        result = await list_documents(status="bad-status")
         self.assertIn("error", result[0])
 
-    def test_result_includes_required_fields(self):
+    async def test_result_includes_required_fields(self):
         from documents.mcp import list_documents
 
-        result = list_documents(status="all")
+        result = await list_documents(status="all")
         for doc in result:
             for field in ("id", "title", "slug", "status", "tags", "updated_at"):
                 self.assertIn(field, doc)
@@ -533,36 +533,36 @@ class TestMCPSearchDocuments(TestCase):
             status="draft",
         )
 
-    def test_keyword_search_finds_matching_docs(self):
+    async def test_keyword_search_finds_matching_docs(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python")
+        result = await search_documents("Python")
         titles = [d["title"] for d in result]
         self.assertIn("Python Guide", titles)
 
-    def test_keyword_search_filters_by_status(self):
+    async def test_keyword_search_filters_by_status(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python", status="published")
+        result = await search_documents("Python", status="published")
         titles = [d["title"] for d in result]
         self.assertNotIn("Draft Python Doc", titles)
 
-    def test_limit_is_respected(self):
+    async def test_limit_is_respected(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python", limit=1)
+        result = await search_documents("Python", limit=1)
         self.assertEqual(len(result), 1)
 
-    def test_limit_capped_at_50(self):
+    async def test_limit_capped_at_50(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python", limit=100)
+        result = await search_documents("Python", limit=100)
         self.assertLessEqual(len(result), 50)
 
-    def test_result_includes_required_fields(self):
+    async def test_result_includes_required_fields(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python")
+        result = await search_documents("Python")
         for doc in result:
             for field in (
                 "id",
@@ -576,9 +576,9 @@ class TestMCPSearchDocuments(TestCase):
             ):
                 self.assertIn(field, doc)
 
-    def test_keyword_fallback_score_is_none(self):
+    async def test_keyword_fallback_score_is_none(self):
         from documents.mcp import search_documents
 
-        result = search_documents("Python")
+        result = await search_documents("Python")
         for doc in result:
             self.assertIsNone(doc["score"])
