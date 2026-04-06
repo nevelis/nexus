@@ -145,13 +145,15 @@ resource "kubernetes_deployment" "nexus" {
   spec {
     replicas = var.replicas
 
-    # Zero-downtime rolling deploys: spin up new pod before killing old one.
-    # Requires replicas >= 2 — with 1 replica maxUnavailable=0 would stall forever.
+    # Cluster nodes are near-full — can't surge a 3rd pod during rolling update.
+    # maxSurge=0, maxUnavailable=1: terminate one old pod first (freeing its memory
+    # slot), then start the replacement. Brief moment with 1 pod serving but avoids
+    # Pending/OOM-evict hell on a shared cluster.
     strategy {
       type = "RollingUpdate"
       rolling_update {
-        max_surge       = 1
-        max_unavailable = 0
+        max_surge       = 0
+        max_unavailable = 1
       }
     }
 
