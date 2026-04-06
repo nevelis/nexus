@@ -22,9 +22,9 @@ variable "image" {
 }
 
 variable "replicas" {
-  description = "Number of pod replicas"
+  description = "Number of pod replicas — minimum 2 for zero-downtime rolling deploys"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "django_secret_key" {

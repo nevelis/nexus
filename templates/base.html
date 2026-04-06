@@ -3,16 +3,179 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
   <title>{% block title %}Nexus{% endblock %} — Nexus</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
   <style>
-    .content pre { background: #1e1e2e; color: #cdd6f4; border-radius: 6px; padding: 1rem; overflow-x: auto; }
-    .content code { background: #313244; color: #cba6f7; padding: 0.1em 0.3em; border-radius: 3px; }
-    .document-meta { font-size: 0.85rem; color: #888; }
-    .tag-list .tag { margin-right: 0.25rem; }
+    /* ── Base dark theme ───────────────────────────────────────────── */
+    :root {
+      --bg:          #13131a;
+      --bg-surface:  #1e1e2e;
+      --bg-elevated: #252535;
+      --border:      #383850;
+      --text:        #cdd6f4;
+      --text-muted:  #7c7f9e;
+      --text-dim:    #585b6e;
+      --accent:      #89b4fa;
+      --accent-dim:  #1e3a5f;
+      --green:       #a6e3a1;
+      --yellow:      #f9e2af;
+      --red:         #f38ba8;
+    }
+
+    html, body {
+      background-color: var(--bg);
+      color: var(--text);
+    }
+
     body { display: flex; flex-direction: column; min-height: 100vh; }
     .main-content { flex: 1; }
+
+    /* ── Navbar ────────────────────────────────────────────────────── */
+    .navbar.is-dark {
+      background-color: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .navbar.is-dark .navbar-item,
+    .navbar.is-dark .navbar-link {
+      color: var(--text);
+    }
+    .navbar.is-dark .navbar-item:hover,
+    .navbar.is-dark .navbar-link:hover {
+      background-color: var(--bg-elevated);
+      color: var(--accent);
+    }
+    .navbar-menu { background-color: var(--bg-surface); }
+
+    /* ── Inputs & forms ────────────────────────────────────────────── */
+    .input, .textarea, .select select {
+      background-color: var(--bg-elevated);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .input::placeholder, .textarea::placeholder { color: var(--text-dim); }
+    .input:focus, .textarea:focus, .select select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 0.125em rgba(137, 180, 250, 0.25);
+    }
+    .select::after { border-color: var(--text-muted); }
+    .label { color: var(--text); }
+
+    /* ── Buttons ───────────────────────────────────────────────────── */
+    .button.is-light {
+      background-color: var(--bg-elevated);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .button.is-light:hover {
+      background-color: var(--border);
+      color: var(--text);
+    }
+    .button.is-primary {
+      background-color: var(--accent);
+      color: #0d0d16;
+    }
+    .button.is-primary:hover { background-color: #74a8f8; }
+
+    /* ── Cards / boxes ─────────────────────────────────────────────── */
+    .box {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border);
+      box-shadow: none;
+      color: var(--text);
+    }
+    .box a { color: var(--accent); }
+    .box a:hover { color: #74a8f8; }
+
+    /* ── Notifications ─────────────────────────────────────────────── */
+    .notification.is-light {
+      background-color: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+    .notification.is-danger {
+      background-color: #3d1a24;
+      color: var(--red);
+    }
+
+    /* ── Sidebar menu ──────────────────────────────────────────────── */
+    .menu-label { color: var(--text-dim); }
+    .menu-list a {
+      color: var(--text-muted);
+      border-radius: 4px;
+    }
+    .menu-list a:hover { background-color: var(--bg-elevated); color: var(--text); }
+    .menu-list a.is-active {
+      background-color: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* ── Breadcrumbs ───────────────────────────────────────────────── */
+    .breadcrumb a { color: var(--text-muted); }
+    .breadcrumb a:hover { color: var(--text); }
+    .breadcrumb li.is-active a { color: var(--text-dim); }
+    .breadcrumb li + li::before { color: var(--text-dim); }
+
+    /* ── Typography / content body ─────────────────────────────────── */
+    .title, .subtitle { color: var(--text); }
+    .content {
+      color: var(--text);
+      background: transparent;
+    }
+    .content h1, .content h2, .content h3,
+    .content h4, .content h5, .content h6 { color: var(--text); }
+    .content a { color: var(--accent); }
+    .content a:hover { color: #74a8f8; }
+    .content strong { color: var(--text); }
+    .content blockquote {
+      background: var(--bg-elevated);
+      border-left-color: var(--accent);
+      color: var(--text-muted);
+    }
+    .content table th { color: var(--text); background: var(--bg-elevated); }
+    .content table td { color: var(--text); border-color: var(--border); }
+    .content table tr:nth-child(even) { background: var(--bg-surface); }
+    .content hr { background-color: var(--border); }
+
+    /* Code blocks — catppuccin-style */
+    .content pre {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+    }
+    .content code:not(pre code) {
+      background: var(--bg-elevated);
+      color: #cba6f7;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+    }
+
+    /* ── Tags ──────────────────────────────────────────────────────── */
+    .tag.is-info.is-light {
+      background-color: var(--accent-dim);
+      color: var(--accent);
+    }
+    .tag.is-warning {
+      background-color: #3d2f0a;
+      color: var(--yellow);
+    }
+    .tag-list .tag { margin-right: 0.25rem; }
+
+    /* ── Document meta ─────────────────────────────────────────────── */
+    .document-meta { font-size: 0.85rem; color: var(--text-muted); }
+
+    /* ── Footer ────────────────────────────────────────────────────── */
+    .footer {
+      background-color: var(--bg-surface);
+      border-top: 1px solid var(--border);
+    }
+    .footer .has-text-grey { color: var(--text-dim) !important; }
+
+    /* ── Excerpt text ──────────────────────────────────────────────── */
+    .has-text-grey { color: var(--text-muted) !important; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>

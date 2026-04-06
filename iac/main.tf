@@ -123,13 +123,9 @@ resource "kubernetes_secret" "nexus" {
 
   data = {
     SECRET_KEY = var.django_secret_key
-    # Build the connection URI pointing at the nexus database on the shared lab-dev cluster.
-    # The cluster URI points to `defaultdb`; replace with `nexus` + sslmode.
-    DATABASE_URL = replace(
-      data.digitalocean_database_cluster.lab_dev.uri,
-      "/defaultdb",
-      "/nexus"
-    )
+    # Construct the DATABASE_URL from individual cluster attributes so we get
+    # the actual password (the data source `uri` attribute strips credentials).
+    DATABASE_URL = "postgresql://${data.digitalocean_database_cluster.lab_dev.user}:${data.digitalocean_database_cluster.lab_dev.password}@${data.digitalocean_database_cluster.lab_dev.host}:${data.digitalocean_database_cluster.lab_dev.port}/nexus?sslmode=require"
   }
 
   type = "Opaque"
@@ -148,6 +144,16 @@ resource "kubernetes_deployment" "nexus" {
 
   spec {
     replicas = var.replicas
+
+    # Zero-downtime rolling deploys: spin up new pod before killing old one.
+    # Requires replicas >= 2 — with 1 replica maxUnavailable=0 would stall forever.
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_surge       = 1
+        max_unavailable = 0
+      }
+    }
 
     selector {
       match_labels = { app = "nexus" }

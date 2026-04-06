@@ -1,0 +1,50 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+dist
+build
+.eggs
+*.egg
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Infrastructure — never bake into image
+iac/
+
+# CI/CD
+.github/
+
+# Docs & logs
+logs/
+*.log
+
+# Local dev
+docker-compose.yml
+docker-compose*.yml
+.env
+.env.*
+
+# Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
