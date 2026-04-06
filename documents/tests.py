@@ -1,6 +1,6 @@
 """Tests for the documents app: models, views, and MCP tools."""
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, TransactionTestCase
 
 from .models import Document, Tag
 
@@ -287,7 +287,7 @@ class TestDocumentEditView(TestCase):
 # ── MCP: get_document ────────────────────────────────────────────────────────
 
 
-class TestMCPGetDocument(TestCase):
+class TestMCPGetDocument(TransactionTestCase):
     def setUp(self):
         self.doc = Document.objects.create(
             title="MCP Doc",
@@ -329,7 +329,7 @@ class TestMCPGetDocument(TestCase):
 # ── MCP: create_document ─────────────────────────────────────────────────────
 
 
-class TestMCPCreateDocument(TestCase):
+class TestMCPCreateDocument(TransactionTestCase):
     async def test_creates_document_with_defaults(self):
         from documents.mcp import create_document
 
@@ -367,7 +367,7 @@ class TestMCPCreateDocument(TestCase):
 # ── MCP: update_document ─────────────────────────────────────────────────────
 
 
-class TestMCPUpdateDocument(TestCase):
+class TestMCPUpdateDocument(TransactionTestCase):
     def setUp(self):
         self.doc = Document.objects.create(
             title="Original",
@@ -427,7 +427,7 @@ class TestMCPUpdateDocument(TestCase):
 # ── MCP: archive_document ────────────────────────────────────────────────────
 
 
-class TestMCPArchiveDocument(TestCase):
+class TestMCPArchiveDocument(TransactionTestCase):
     def setUp(self):
         self.doc = Document.objects.create(
             title="To Archive",
@@ -461,7 +461,7 @@ class TestMCPArchiveDocument(TestCase):
 # ── MCP: list_documents ──────────────────────────────────────────────────────
 
 
-class TestMCPListDocuments(TestCase):
+class TestMCPListDocuments(TransactionTestCase):
     def setUp(self):
         Document.objects.create(title="Published", body="b", status="published")
         Document.objects.create(title="Draft", body="b", status="draft")
@@ -513,7 +513,7 @@ class TestMCPListDocuments(TestCase):
 # ── MCP: search_documents ────────────────────────────────────────────────────
 
 
-class TestMCPSearchDocuments(TestCase):
+class TestMCPSearchDocuments(TransactionTestCase):
     """search_documents with generate_embedding mocked to None (keyword fallback via conftest)."""
 
     def setUp(self):
