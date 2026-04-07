@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-DEFAULT_API_URL = "http://embeddings.embeddings.svc.cluster.local:8000/embed"
+DEFAULT_API_URL = "http://embeddings.embeddings.svc.cluster.local/embed"
 LOCAL_DEV_URL = "https://embeddings.lab.amazingland.live/embed"
 
 EMBEDDINGS_API_URL = os.environ.get("EMBEDDINGS_API_URL", "")
