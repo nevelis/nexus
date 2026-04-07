@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
@@ -15,3 +16,6 @@ urlpatterns = [
     path("search/", include("search.urls")),
     path("", include("documents.urls")),
 ]
+
+if settings.SILK_ENABLED:
+    urlpatterns.insert(2, path("silk/", include("silk.urls", namespace="silk")))

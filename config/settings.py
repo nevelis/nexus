@@ -104,6 +104,17 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# django-silk profiler — opt-in via SILK_ENABLED env var
+SILK_ENABLED = os.environ.get("SILK_ENABLED", "False") == "True"
+if SILK_ENABLED:
+    INSTALLED_APPS.append("silk")
+    # Insert SilkyMiddleware after AuthenticationMiddleware so user info is available
+    _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
+    MIDDLEWARE.insert(_auth_idx + 1, "silk.middleware.SilkyMiddleware")
+    # Require staff/superuser login to access silk UI
+    SILKY_AUTHENTICATION = True
+    SILKY_AUTHORISATION = True
+
 # Embedding settings — remote API via EmbeddingClient (search.embeddings)
 # Dimensions must match VectorField in models.py and the remote model (all-MiniLM-L6-v2)
 EMBEDDING_DIMENSIONS = 384
