@@ -110,7 +110,7 @@ resource "kubernetes_config_map" "nexus" {
     ALLOWED_HOSTS = "*"
     PORT                   = "8000"
     # Embeddings handled by remote API — URL defaults to in-cluster service
-    EMBEDDINGS_API_URL = "http://embeddings.embeddings.svc.cluster.local:8000/embed"
+    EMBEDDINGS_API_URL = "http://embeddings.embeddings.svc.cluster.local/embed"
   }
 }
 
