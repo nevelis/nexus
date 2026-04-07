@@ -1,9 +1,9 @@
 """
 Root pytest configuration.
 
-Mocks embedding generation globally so tests never load the ML model.
+Mocks embedding generation globally so tests never call the remote API.
 All tests default to the keyword-fallback code path. Tests that specifically
-need to exercise the embedding module mock at the SentenceTransformer level.
+need to exercise the embedding client mock it at the EmbeddingClient level.
 """
 
 import pytest

@@ -9,24 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install uv
 
-# ── Pre-install heavy ML deps (torch + sentence-transformers) ────────────────
-# These are installed BEFORE COPY pyproject.toml so this layer is cached even
-# when app code or pyproject.toml changes. torch is ~1.5GB — keeping it in a
-# stable layer means CI builds only re-install the fast lightweight deps on
-# most commits.
-#
-# Pin to a minor version range so the cache only busts on intentional bumps.
-RUN uv pip install --system --no-cache "sentence-transformers>=3.0,<4"
-
-# ── Bake the embedding model into the image ──────────────────────────────────
-# Model is downloaded once at build time; pods start instantly with no
-# cold-start download. HF_HOME is inside /app so the nexus user owns it.
-ENV HF_HOME=/app/.cache/huggingface
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
-# ── Remaining lightweight app deps ───────────────────────────────────────────
-# Separate COPY so Docker can cache this layer when only source files change.
-# sentence-transformers is already installed; uv resolves and skips it.
+# ── Install app dependencies ────────────────────────────────────────────────
+# Embeddings are now handled by the remote API (httpx) — no more torch/sentence-transformers.
 COPY pyproject.toml .
 RUN uv pip install --system --no-cache \
     "django>=5.2,<7" \
@@ -37,6 +21,7 @@ RUN uv pip install --system --no-cache \
     "python-dotenv>=1.0" \
     "dj-database-url>=2.0" \
     "whitenoise>=6.8" \
+    "httpx>=0.27" \
     "gunicorn"
 
 # ── Copy application source and collect static files ─────────────────────────

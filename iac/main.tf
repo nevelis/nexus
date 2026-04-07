@@ -109,8 +109,8 @@ resource "kubernetes_config_map" "nexus" {
     # Pod IPs and localhost addresses vary per pod; * is the standard K8s pattern.
     ALLOWED_HOSTS = "*"
     PORT                   = "8000"
-    # sentence-transformers model is baked into the image — no API key needed
-    HF_HOME = "/app/.cache/huggingface"
+    # Embeddings handled by remote API — URL defaults to in-cluster service
+    EMBEDDINGS_API_URL = "http://embeddings.embeddings.svc.cluster.local:8000/embed"
   }
 }
 
@@ -212,7 +212,7 @@ resource "kubernetes_deployment" "nexus" {
 
           resources {
             requests = {
-              # sentence-transformers model adds ~200MB RAM — bumped from AGAST defaults
+              # No local ML model — embeddings via remote API; lower memory footprint
               memory = var.memory_request
               cpu    = var.cpu_request
             }

@@ -34,7 +34,7 @@ variable "django_secret_key" {
 }
 
 variable "memory_request" {
-  description = "Pod memory request — sentence-transformers model needs ~200MB; cluster nodes are 1.5Gi allocatable"
+  description = "Pod memory request — no local ML model; embeddings via remote API"
   type        = string
   default     = "384Mi"
 }

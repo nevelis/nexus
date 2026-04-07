@@ -104,9 +104,8 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Embedding settings — sentence-transformers, no API key required
-# Model is baked into the Docker image; dimensions must match VectorField in models.py
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+# Embedding settings — remote API via EmbeddingClient (search.embeddings)
+# Dimensions must match VectorField in models.py and the remote model (all-MiniLM-L6-v2)
 EMBEDDING_DIMENSIONS = 384
 
 # django-mcp-server config

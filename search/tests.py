@@ -1,85 +1,203 @@
-"""Tests for the search app: embedding generation and search view."""
+"""Tests for the search app: EmbeddingClient, generate_embedding, and search view."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import numpy as np
 from django.test import Client, TestCase
 
 import search.embeddings as emb
 from documents.models import Document
+from search.embeddings import EmbeddingClient, EmbeddingServiceError
 
 # Capture the real generate_embedding function *at module import time*, before
 # the conftest autouse fixture replaces the module attribute with a no-op lambda.
-# This lets TestGenerateEmbedding call the real implementation while still
-# benefiting from _get_model being patched (no actual ML model loaded).
 _real_generate_embedding = emb.generate_embedding
 
-# ── Embedding module ─────────────────────────────────────────────────────────
+
+# ── EmbeddingClient unit tests ──────────────────────────────────────────────
+
+
+class TestEmbeddingClient(TestCase):
+    """Tests for EmbeddingClient HTTP calls."""
+
+    def _make_client(self, **kwargs):
+        return EmbeddingClient(api_url="https://test.example.com/embed", **kwargs)
+
+    @patch("search.embeddings.httpx.post")
+    def test_embed_returns_list_of_vectors(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.return_value.json.return_value = {
+            "embeddings": [[0.1] * 384, [0.2] * 384],
+            "model": "all-MiniLM-L6-v2",
+            "dimensions": 384,
+        }
+        client = self._make_client()
+        result = client.embed(["hello", "world"])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result[0]), 384)
+        self.assertTrue(all(isinstance(v, float) for v in result[0]))
+
+    @patch("search.embeddings.httpx.post")
+    def test_embed_one_returns_single_vector(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.return_value.json.return_value = {
+            "embeddings": [[0.5] * 384],
+            "model": "all-MiniLM-L6-v2",
+            "dimensions": 384,
+        }
+        client = self._make_client()
+        result = client.embed_one("hello world")
+        self.assertEqual(len(result), 384)
+
+    @patch("search.embeddings.httpx.post")
+    def test_embed_sends_correct_payload(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.return_value.json.return_value = {"embeddings": [[0.1] * 384]}
+        client = self._make_client()
+        client.embed(["test text"])
+        mock_post.assert_called_once_with(
+            "https://test.example.com/embed",
+            json={"text": ["test text"]},
+            timeout=5.0,
+        )
+
+    @patch("search.embeddings.httpx.post")
+    def test_embed_empty_list_returns_empty(self, mock_post):
+        client = self._make_client()
+        result = client.embed([])
+        self.assertEqual(result, [])
+        mock_post.assert_not_called()
+
+    @patch("search.embeddings.httpx.post")
+    def test_batch_chunking(self, mock_post):
+        """Texts exceeding batch_size are split into multiple requests."""
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        # Each call returns embeddings for batch_size items
+        mock_post.return_value.json.side_effect = [
+            {"embeddings": [[0.1] * 384] * 3},
+            {"embeddings": [[0.2] * 384] * 2},
+        ]
+        client = self._make_client(batch_size=3)
+        result = client.embed(["a", "b", "c", "d", "e"])
+        self.assertEqual(len(result), 5)
+        self.assertEqual(mock_post.call_count, 2)
+
+    @patch("search.embeddings.httpx.post")
+    def test_timeout_raises_embedding_service_error(self, mock_post):
+        import httpx
+
+        mock_post.side_effect = httpx.ReadTimeout("timed out")
+        client = self._make_client()
+        with self.assertRaises(EmbeddingServiceError) as ctx:
+            client.embed(["test"])
+        self.assertIn("timed out", str(ctx.exception))
+
+    @patch("search.embeddings.httpx.post")
+    def test_http_error_raises_embedding_service_error(self, mock_post):
+        import httpx
+
+        response = httpx.Response(
+            500, text="Internal Server Error", request=httpx.Request("POST", "http://test")
+        )
+        mock_post.return_value.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server error", request=response.request, response=response
+        )
+        client = self._make_client()
+        with self.assertRaises(EmbeddingServiceError) as ctx:
+            client.embed(["test"])
+        self.assertIn("500", str(ctx.exception))
+
+    @patch("search.embeddings.httpx.post")
+    def test_connection_error_raises_embedding_service_error(self, mock_post):
+        import httpx
+
+        mock_post.side_effect = httpx.ConnectError("Connection refused")
+        client = self._make_client()
+        with self.assertRaises(EmbeddingServiceError):
+            client.embed(["test"])
+
+    @patch("search.embeddings.httpx.post")
+    def test_bad_response_format_raises_embedding_service_error(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.return_value.json.return_value = {"wrong_key": []}
+        client = self._make_client()
+        with self.assertRaises(EmbeddingServiceError):
+            client.embed(["test"])
+
+
+# ── generate_embedding convenience function ──────────────────────────────────
 
 
 class TestGenerateEmbedding(TestCase):
-    """Tests for search.embeddings.generate_embedding.
+    """Tests for the module-level generate_embedding wrapper."""
 
-    These tests patch _get_model directly so we never load the real
-    SentenceTransformer model (slow, large) during the test run.
-
-    We call _real_generate_embedding (captured before conftest monkeypatching)
-    rather than emb.generate_embedding because the conftest autouse fixture
-    replaces the module attribute with a None-returning stub for all other tests.
-    """
-
-    def _make_mock_model(self, dims=384):
-        mock = MagicMock()
-        mock.encode.return_value = np.ones(dims, dtype=np.float32)
-        return mock
-
-    def test_returns_list_of_floats(self):
-        mock_model = self._make_mock_model()
-        with patch.object(emb, "_get_model", return_value=mock_model):
+    @patch("search.embeddings.httpx.post")
+    def test_returns_list_of_floats(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_post.return_value.json.return_value = {
+            "embeddings": [[1.0] * 384],
+        }
+        # Reset singleton to pick up fresh client
+        emb._client = None
+        try:
             result = _real_generate_embedding("hello world")
+        finally:
+            emb._client = None
         self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 384)
         self.assertTrue(all(isinstance(v, float) for v in result))
 
-    def test_returns_correct_dimensions(self):
-        mock_model = self._make_mock_model(dims=384)
-        with patch.object(emb, "_get_model", return_value=mock_model):
-            result = _real_generate_embedding("some text")
-        self.assertEqual(len(result), 384)
+    @patch("search.embeddings.httpx.post")
+    def test_returns_none_on_api_failure(self, mock_post):
+        import httpx
 
-    def test_passes_text_to_encode(self):
-        mock_model = self._make_mock_model()
-        with patch.object(emb, "_get_model", return_value=mock_model):
-            _real_generate_embedding("my document text")
-        mock_model.encode.assert_called_once_with("my document text")
+        mock_post.side_effect = httpx.ConnectError("Connection refused")
+        emb._client = None
+        try:
+            result = _real_generate_embedding("test")
+        finally:
+            emb._client = None
+        self.assertIsNone(result)
 
-    def test_returns_none_on_model_error(self):
-        with patch.object(emb, "_get_model", side_effect=RuntimeError("model load failed")):
+    def test_returns_none_on_embedding_service_error(self):
+        """generate_embedding catches EmbeddingServiceError and returns None."""
+        with patch.object(emb, "get_client") as mock_get:
+            mock_get.return_value.embed_one.side_effect = EmbeddingServiceError("API down")
             result = _real_generate_embedding("test")
         self.assertIsNone(result)
 
-    def test_returns_none_on_encode_error(self):
-        mock_model = MagicMock()
-        mock_model.encode.side_effect = RuntimeError("encode failed")
-        with patch.object(emb, "_get_model", return_value=mock_model):
-            result = _real_generate_embedding("test")
-        self.assertIsNone(result)
 
-    def test_model_lazy_loaded(self):
-        """_get_model is not called until generate_embedding is first invoked."""
-        mock_model = self._make_mock_model()
-        # SentenceTransformer is a lazy import inside _get_model — patch it at
-        # the source package so the 'from sentence_transformers import ...' picks
-        # up the mock.
-        with patch(
-            "sentence_transformers.SentenceTransformer", return_value=mock_model
-        ) as mock_cls:
-            original_model = emb._model
-            emb._model = None
-            try:
-                _real_generate_embedding("trigger load")
-                mock_cls.assert_called_once_with(emb._MODEL_NAME)
-            finally:
-                emb._model = original_model
+# ── URL resolution ───────────────────────────────────────────────────────────
+
+
+class TestApiUrlResolution(TestCase):
+    """Tests for API URL resolution logic."""
+
+    def test_env_var_takes_precedence(self):
+        with patch.object(emb, "EMBEDDINGS_API_URL", "https://custom.example.com/embed"):
+            url = emb._resolve_api_url()
+        self.assertEqual(url, "https://custom.example.com/embed")
+
+    def test_debug_mode_uses_local_dev_url(self):
+        with (
+            patch.object(emb, "EMBEDDINGS_API_URL", ""),
+            patch.dict("os.environ", {"DEBUG": "True"}),
+        ):
+            url = emb._resolve_api_url()
+        self.assertEqual(url, emb.LOCAL_DEV_URL)
+
+    def test_production_uses_cluster_url(self):
+        with (
+            patch.object(emb, "EMBEDDINGS_API_URL", ""),
+            patch.dict("os.environ", {"DEBUG": "false"}),
+        ):
+            url = emb._resolve_api_url()
+        self.assertEqual(url, emb.DEFAULT_API_URL)
 
 
 # ── Semantic search view ─────────────────────────────────────────────────────
