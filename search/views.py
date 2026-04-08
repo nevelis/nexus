@@ -36,7 +36,7 @@ def semantic_search(request):
             "slug": doc.slug,
             "excerpt": doc.body[:200],
             "url": doc.get_absolute_url(),
-            "score": float(1 - doc.distance) if embedding and hasattr(doc, "distance") else None,
+            "score": float(1 - doc.distance) if embedding is not None and hasattr(doc, "distance") else None,
         }
         for doc in docs
     ]

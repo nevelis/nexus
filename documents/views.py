@@ -49,7 +49,7 @@ def document_list(request):
     tag_slug = request.GET.get("tag")
     query = request.GET.get("q", "").strip()
 
-    docs = Document.objects.all()
+    docs = Document.objects.select_related("parent__parent__parent").all()
 
     if status in Document.Status.values:
         docs = docs.filter(status=status)
