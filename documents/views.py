@@ -1,4 +1,5 @@
 import markdown as md
+from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
@@ -10,20 +11,28 @@ def _resolve_document_by_path(path):
     """Resolve a hierarchical path like 'pit/strategy' to a Document.
 
     Walks the path segments from root to leaf, following parent-child
-    relationships. Returns the Document or raises Http404.
+    relationships.  The final segment is fetched with ``select_related``
+    for the parent chain so that ``get_path()`` / ``get_absolute_url()``
+    don't trigger extra queries.
 
+    Returns the Document or raises Http404.
     Falls back to SlugAlias lookup for old flat URLs (returns redirect).
     """
     segments = [s for s in path.strip("/").split("/") if s]
     if not segments:
         raise Http404("Empty path")
 
-    # Walk the hierarchy: first segment is a root doc, rest are children
+    # Walk the hierarchy: first segment is a root doc, rest are children.
+    # Use select_related on the last segment so the parent chain is cached.
     doc = None
     parent = None
-    for segment in segments:
+    for i, segment in enumerate(segments):
         try:
-            doc = Document.objects.get(slug=segment, parent=parent)
+            qs = Document.objects.all()
+            # Eager-load parent chain on the final segment
+            if i == len(segments) - 1:
+                qs = qs.select_related("parent__parent__parent")
+            doc = qs.get(slug=segment, parent=parent)
         except Document.DoesNotExist:
             doc = None
             break
@@ -36,7 +45,9 @@ def _resolve_document_by_path(path):
     # Only try if the path is a single segment (flat slug)
     if len(segments) == 1:
         try:
-            alias = SlugAlias.objects.select_related("document").get(slug=segments[0])
+            alias = SlugAlias.objects.select_related(
+                "document__parent__parent__parent",
+            ).get(slug=segments[0])
             return alias  # Caller checks isinstance to decide redirect vs render
         except SlugAlias.DoesNotExist:
             pass
@@ -49,7 +60,7 @@ def document_list(request):
     tag_slug = request.GET.get("tag")
     query = request.GET.get("q", "").strip()
 
-    docs = Document.objects.select_related("parent__parent__parent").all()
+    docs = Document.objects.select_related("parent__parent__parent").prefetch_related("tags").all()
 
     if status in Document.Status.values:
         docs = docs.filter(status=status)
@@ -57,8 +68,9 @@ def document_list(request):
     if tag_slug:
         docs = docs.filter(tags__slug=tag_slug)
 
+    # Use Q objects for a single query instead of queryset OR (which can duplicate rows)
     if query:
-        docs = docs.filter(title__icontains=query) | docs.filter(body__icontains=query)
+        docs = docs.filter(Q(title__icontains=query) | Q(body__icontains=query))
 
     tags = Tag.objects.all()
 
@@ -88,12 +100,23 @@ def document_detail(request, path):
         extensions=["fenced_code", "tables", "toc", "nl2br"],
     )
 
-    # Build breadcrumbs from ancestry
+    # Build breadcrumbs from ancestry (parent chain already eager-loaded
+    # by _resolve_document_by_path via select_related)
     ancestors = doc.get_ancestors()
     breadcrumbs = [{"title": a.title, "url": a.get_absolute_url()} for a in ancestors]
 
-    # Children of this document
-    children = doc.children.filter(status=Document.Status.PUBLISHED).order_by("title")
+    # Prefetch tags for the detail doc in a single query
+    from django.db.models import prefetch_related_objects
+
+    prefetch_related_objects([doc], "tags")
+
+    # Children of this document — eager-load parent chain so
+    # child.get_absolute_url() doesn't trigger extra queries
+    children = (
+        doc.children.select_related("parent__parent__parent")
+        .filter(status=Document.Status.PUBLISHED)
+        .order_by("title")
+    )
 
     context = {
         "document": doc,
