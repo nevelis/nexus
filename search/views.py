@@ -16,7 +16,7 @@ def semantic_search(request):
 
     embedding = generate_embedding(query)
 
-    if embedding:
+    if embedding is not None:
         # Vector similarity search
         from pgvector.django import CosineDistance
 

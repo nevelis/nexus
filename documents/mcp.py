@@ -49,13 +49,13 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
 
     def _search():
         _limit = min(limit, 50)
-        qs = Document.objects.filter(status=status)
+        qs = Document.objects.select_related("parent__parent__parent").filter(status=status)
 
         from search.embeddings import generate_embedding
 
         embedding = generate_embedding(query)
 
-        if embedding:
+        if embedding is not None:
             from pgvector.django import CosineDistance
 
             docs = (
@@ -179,7 +179,7 @@ async def create_document(
             from search.embeddings import generate_embedding
 
             embedding = generate_embedding(f"{doc.title}\n\n{doc.body}")
-            if embedding:
+            if embedding is not None:
                 doc.embedding = embedding
                 doc.save(update_fields=["embedding"])
         except Exception:
@@ -249,7 +249,7 @@ async def update_document(
                 from search.embeddings import generate_embedding
 
                 embedding = generate_embedding(f"{doc.title}\n\n{doc.body}")
-                if embedding:
+                if embedding is not None:
                     doc.embedding = embedding
                     doc.save(update_fields=["embedding"])
             except Exception:
@@ -314,7 +314,7 @@ async def list_documents(status: str = "published", limit: int = 20) -> list[dic
 
     def _list():
         _limit = min(limit, 100)
-        qs = Document.objects.all()
+        qs = Document.objects.select_related("parent__parent__parent").all()
 
         if status != "all":
             if status not in Document.Status.values:
