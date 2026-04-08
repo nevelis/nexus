@@ -17,17 +17,22 @@ def semantic_search(request):
     embedding = generate_embedding(query)
 
     if embedding is not None:
-        # Vector similarity search
+        # Vector similarity search — eager-load parent chain for get_absolute_url()
         from pgvector.django import CosineDistance
 
         docs = (
-            Document.objects.filter(status="published", embedding__isnull=False)
+            Document.objects.select_related("parent__parent__parent")
+            .filter(status="published", embedding__isnull=False)
             .annotate(distance=CosineDistance("embedding", embedding))
             .order_by("distance")[:limit]
         )
     else:
-        # Fallback: keyword search
-        docs = Document.objects.filter(status="published").filter(title__icontains=query)[:limit]
+        # Fallback: keyword search — eager-load parent chain for get_absolute_url()
+        docs = (
+            Document.objects.select_related("parent__parent__parent")
+            .filter(status="published")
+            .filter(title__icontains=query)[:limit]
+        )
 
     results = [
         {
@@ -36,7 +41,9 @@ def semantic_search(request):
             "slug": doc.slug,
             "excerpt": doc.body[:200],
             "url": doc.get_absolute_url(),
-            "score": float(1 - doc.distance) if embedding is not None and hasattr(doc, "distance") else None,
+            "score": float(1 - doc.distance)
+            if embedding is not None and hasattr(doc, "distance")
+            else None,
         }
         for doc in docs
     ]

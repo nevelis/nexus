@@ -15,8 +15,40 @@ from mcp_server import mcp_server as mcp
 from .models import Document, Tag
 
 
+def _resolve_by_path(slug):
+    """Walk a hierarchical slug path and return the Document.
+
+    The final segment is fetched with ``select_related`` for the full
+    parent chain so that ``get_path()`` and ``get_absolute_url()`` are
+    free.  Returns ``None`` when the path does not resolve.
+    """
+    segments = [s for s in slug.strip("/").split("/") if s]
+    doc = None
+    parent = None
+    for i, segment in enumerate(segments):
+        qs = Document.objects.all()
+        if i == len(segments) - 1:
+            qs = qs.select_related("parent__parent__parent")
+        try:
+            doc = qs.get(slug=segment, parent=parent)
+        except Document.DoesNotExist:
+            return None
+        parent = doc
+    return doc
+
+
 def _doc_to_dict(doc, include_body=False):
-    """Serialize a Document to a dict with hierarchy info."""
+    """Serialize a Document to a dict with hierarchy info.
+
+    If tags have been prefetched (via ``prefetch_related("tags")``), this
+    reads from the cache.  Otherwise it falls back to a DB query.
+    """
+    # Use the prefetch cache when available to avoid N+1 tag queries.
+    if "tags" in getattr(doc, "_prefetched_objects_cache", {}):
+        tag_names = [t.name for t in doc.tags.all()]
+    else:
+        tag_names = list(doc.tags.values_list("name", flat=True))
+
     data = {
         "id": str(doc.id),
         "title": doc.title,
@@ -25,7 +57,7 @@ def _doc_to_dict(doc, include_body=False):
         "url": doc.get_absolute_url(),
         "status": doc.status,
         "parent_slug": doc.parent.slug if doc.parent else None,
-        "tags": list(doc.tags.values_list("name", flat=True)),
+        "tags": tag_names,
         "updated_at": doc.updated_at.isoformat(),
     }
     if include_body:
@@ -49,7 +81,11 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
 
     def _search():
         _limit = min(limit, 50)
-        qs = Document.objects.select_related("parent__parent__parent").filter(status=status)
+        qs = (
+            Document.objects.select_related("parent__parent__parent")
+            .prefetch_related("tags")
+            .filter(status=status)
+        )
 
         from search.embeddings import generate_embedding
 
@@ -65,6 +101,7 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
             )
             results = []
             for doc in docs:
+                tag_names = [t.name for t in doc.tags.all()]
                 results.append(
                     {
                         "id": str(doc.id),
@@ -75,16 +112,18 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
                         "status": doc.status,
                         "excerpt": doc.body[:300],
                         "score": round(float(1 - doc.distance), 4),
-                        "tags": list(doc.tags.values_list("name", flat=True)),
+                        "tags": tag_names,
                         "updated_at": doc.updated_at.isoformat(),
                     }
                 )
             return results
         else:
-            # Keyword fallback
-            docs = (
-                qs.filter(title__icontains=query) | qs.filter(body__icontains=query)
-            ).distinct()[:_limit]
+            # Keyword fallback — use Q objects for a single query
+            from django.db.models import Q
+
+            docs = qs.filter(Q(title__icontains=query) | Q(body__icontains=query)).distinct()[
+                :_limit
+            ]
             return [
                 {
                     "id": str(doc.id),
@@ -95,7 +134,7 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
                     "status": doc.status,
                     "excerpt": doc.body[:300],
                     "score": None,
-                    "tags": list(doc.tags.values_list("name", flat=True)),
+                    "tags": [t.name for t in doc.tags.all()],
                     "updated_at": doc.updated_at.isoformat(),
                 }
                 for doc in docs
@@ -116,20 +155,9 @@ async def get_document(slug: str) -> dict:
     """
 
     def _get():
-        # Try hierarchical path resolution
-        segments = [s for s in slug.strip("/").split("/") if s]
-        doc = None
-        parent = None
-        for segment in segments:
-            try:
-                doc = Document.objects.get(slug=segment, parent=parent)
-            except Document.DoesNotExist:
-                return {"error": f"Document '{slug}' not found"}
-            parent = doc
-
+        doc = _resolve_by_path(slug)
         if doc is None:
             return {"error": f"Document '{slug}' not found"}
-
         return _doc_to_dict(doc, include_body=True)
 
     return await sync_to_async(_get, thread_sensitive=False)()
@@ -212,17 +240,7 @@ async def update_document(
     """
 
     def _update():
-        # Resolve by path
-        segments = [s for s in slug.strip("/").split("/") if s]
-        doc = None
-        parent = None
-        for segment in segments:
-            try:
-                doc = Document.objects.get(slug=segment, parent=parent)
-            except Document.DoesNotExist:
-                return {"error": f"Document '{slug}' not found"}
-            parent = doc
-
+        doc = _resolve_by_path(slug)
         if doc is None:
             return {"error": f"Document '{slug}' not found"}
 
@@ -272,17 +290,7 @@ async def archive_document(slug: str) -> dict:
     """
 
     def _archive():
-        # Resolve by path
-        segments = [s for s in slug.strip("/").split("/") if s]
-        doc = None
-        parent = None
-        for segment in segments:
-            try:
-                doc = Document.objects.get(slug=segment, parent=parent)
-            except Document.DoesNotExist:
-                return {"error": f"Document '{slug}' not found"}
-            parent = doc
-
+        doc = _resolve_by_path(slug)
         if doc is None:
             return {"error": f"Document '{slug}' not found"}
 
@@ -314,7 +322,9 @@ async def list_documents(status: str = "published", limit: int = 20) -> list[dic
 
     def _list():
         _limit = min(limit, 100)
-        qs = Document.objects.select_related("parent__parent__parent").all()
+        qs = (
+            Document.objects.select_related("parent__parent__parent").prefetch_related("tags").all()
+        )
 
         if status != "all":
             if status not in Document.Status.values:
