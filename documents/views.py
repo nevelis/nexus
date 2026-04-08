@@ -1,8 +1,47 @@
 import markdown as md
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
-from .models import Document, Tag
+from .models import Document, SlugAlias, Tag
+
+
+def _resolve_document_by_path(path):
+    """Resolve a hierarchical path like 'pit/strategy' to a Document.
+
+    Walks the path segments from root to leaf, following parent-child
+    relationships. Returns the Document or raises Http404.
+
+    Falls back to SlugAlias lookup for old flat URLs (returns redirect).
+    """
+    segments = [s for s in path.strip("/").split("/") if s]
+    if not segments:
+        raise Http404("Empty path")
+
+    # Walk the hierarchy: first segment is a root doc, rest are children
+    doc = None
+    parent = None
+    for segment in segments:
+        try:
+            doc = Document.objects.get(slug=segment, parent=parent)
+        except Document.DoesNotExist:
+            doc = None
+            break
+        parent = doc
+
+    if doc is not None:
+        return doc
+
+    # Fallback: try slug alias (for old flat URLs)
+    # Only try if the path is a single segment (flat slug)
+    if len(segments) == 1:
+        try:
+            alias = SlugAlias.objects.select_related("document").get(slug=segments[0])
+            return alias  # Caller checks isinstance to decide redirect vs render
+        except SlugAlias.DoesNotExist:
+            pass
+
+    raise Http404(f"Document not found at path: {path}")
 
 
 def document_list(request):
@@ -36,13 +75,32 @@ def document_list(request):
     return render(request, "documents/list.html", context)
 
 
-def document_detail(request, slug):
-    doc = get_object_or_404(Document, slug=slug)
+def document_detail(request, path):
+    result = _resolve_document_by_path(path)
+
+    # SlugAlias → 301 redirect to canonical hierarchical URL
+    if isinstance(result, SlugAlias):
+        return redirect(result.document.get_absolute_url(), permanent=True)
+
+    doc = result
     body_html = md.markdown(
         doc.body,
         extensions=["fenced_code", "tables", "toc", "nl2br"],
     )
-    context = {"document": doc, "body_html": body_html}
+
+    # Build breadcrumbs from ancestry
+    ancestors = doc.get_ancestors()
+    breadcrumbs = [{"title": a.title, "url": a.get_absolute_url()} for a in ancestors]
+
+    # Children of this document
+    children = doc.children.filter(status=Document.Status.PUBLISHED).order_by("title")
+
+    context = {
+        "document": doc,
+        "body_html": body_html,
+        "breadcrumbs": breadcrumbs,
+        "children": children,
+    }
     return render(request, "documents/detail.html", context)
 
 
@@ -53,11 +111,16 @@ def document_create(request):
         body = request.POST.get("body", "").strip()
         status = request.POST.get("status", Document.Status.DRAFT)
         tag_names = [t.strip() for t in request.POST.get("tags", "").split(",") if t.strip()]
+        parent_slug = request.POST.get("parent", "").strip()
 
         if not title:
             return render(request, "documents/create.html", {"error": "Title is required."})
 
-        doc = Document.objects.create(title=title, body=body, status=status)
+        parent = None
+        if parent_slug:
+            parent = get_object_or_404(Document, slug=parent_slug, parent__isnull=True)
+
+        doc = Document.objects.create(title=title, body=body, status=status, parent=parent)
 
         for name in tag_names:
             tag, _ = Tag.objects.get_or_create(name=name, defaults={"name": name})
@@ -72,8 +135,12 @@ def document_create(request):
 
 
 @require_http_methods(["GET", "POST"])
-def document_edit(request, slug):
-    doc = get_object_or_404(Document, slug=slug)
+def document_edit(request, path):
+    result = _resolve_document_by_path(path)
+    if isinstance(result, SlugAlias):
+        return redirect(result.document.get_absolute_url() + "edit/", permanent=True)
+
+    doc = result
 
     if request.method == "POST":
         doc.title = request.POST.get("title", doc.title).strip()

@@ -15,6 +15,25 @@ from mcp_server import mcp_server as mcp
 from .models import Document, Tag
 
 
+def _doc_to_dict(doc, include_body=False):
+    """Serialize a Document to a dict with hierarchy info."""
+    data = {
+        "id": str(doc.id),
+        "title": doc.title,
+        "slug": doc.slug,
+        "path": doc.get_path(),
+        "url": doc.get_absolute_url(),
+        "status": doc.status,
+        "parent_slug": doc.parent.slug if doc.parent else None,
+        "tags": list(doc.tags.values_list("name", flat=True)),
+        "updated_at": doc.updated_at.isoformat(),
+    }
+    if include_body:
+        data["body"] = doc.body
+        data["created_at"] = doc.created_at.isoformat()
+    return data
+
+
 @mcp.tool()
 async def search_documents(query: str, limit: int = 10, status: str = "published") -> list[dict]:
     """Search documents by semantic similarity (when embeddings available) or keyword.
@@ -25,7 +44,7 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
         status: Filter by status — 'published', 'draft', or 'archived'
 
     Returns:
-        List of matching documents with id, title, slug, excerpt, url
+        List of matching documents with id, title, slug, path, excerpt, url
     """
 
     def _search():
@@ -51,6 +70,8 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
                         "id": str(doc.id),
                         "title": doc.title,
                         "slug": doc.slug,
+                        "path": doc.get_path(),
+                        "url": doc.get_absolute_url(),
                         "status": doc.status,
                         "excerpt": doc.body[:300],
                         "score": round(float(1 - doc.distance), 4),
@@ -69,6 +90,8 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
                     "id": str(doc.id),
                     "title": doc.title,
                     "slug": doc.slug,
+                    "path": doc.get_path(),
+                    "url": doc.get_absolute_url(),
                     "status": doc.status,
                     "excerpt": doc.body[:300],
                     "score": None,
@@ -83,31 +106,31 @@ async def search_documents(query: str, limit: int = 10, status: str = "published
 
 @mcp.tool()
 async def get_document(slug: str) -> dict:
-    """Get a document by its slug.
+    """Get a document by its slug or hierarchical path.
 
     Args:
-        slug: The document's URL slug
+        slug: The document's URL slug or path (e.g. 'pit' or 'pit/strategy')
 
     Returns:
-        Full document data including body (markdown), tags, status, timestamps
+        Full document data including body (markdown), tags, status, timestamps, path
     """
 
     def _get():
-        try:
-            doc = Document.objects.get(slug=slug)
-        except Document.DoesNotExist:
+        # Try hierarchical path resolution
+        segments = [s for s in slug.strip("/").split("/") if s]
+        doc = None
+        parent = None
+        for segment in segments:
+            try:
+                doc = Document.objects.get(slug=segment, parent=parent)
+            except Document.DoesNotExist:
+                return {"error": f"Document '{slug}' not found"}
+            parent = doc
+
+        if doc is None:
             return {"error": f"Document '{slug}' not found"}
 
-        return {
-            "id": str(doc.id),
-            "title": doc.title,
-            "slug": doc.slug,
-            "body": doc.body,
-            "status": doc.status,
-            "tags": list(doc.tags.values_list("name", flat=True)),
-            "created_at": doc.created_at.isoformat(),
-            "updated_at": doc.updated_at.isoformat(),
-        }
+        return _doc_to_dict(doc, include_body=True)
 
     return await sync_to_async(_get, thread_sensitive=False)()
 
@@ -118,6 +141,7 @@ async def create_document(
     body: str,
     status: str = "draft",
     tags: list[str] | None = None,
+    parent_slug: str | None = None,
 ) -> dict:
     """Create a new document.
 
@@ -126,16 +150,24 @@ async def create_document(
         body: Document content in Markdown
         status: 'draft' (default), 'published', or 'archived'
         tags: Optional list of tag names
+        parent_slug: Optional parent document slug (for nesting)
 
     Returns:
-        Created document data including id and slug
+        Created document data including id, slug, and path
     """
 
     def _create():
         if status not in Document.Status.values:
             return {"error": f"Invalid status '{status}'. Choose: {Document.Status.values}"}
 
-        doc = Document.objects.create(title=title, body=body, status=status)
+        parent = None
+        if parent_slug:
+            try:
+                parent = Document.objects.get(slug=parent_slug)
+            except Document.DoesNotExist:
+                return {"error": f"Parent document '{parent_slug}' not found"}
+
+        doc = Document.objects.create(title=title, body=body, status=status, parent=parent)
 
         if tags:
             for name in tags:
@@ -153,14 +185,7 @@ async def create_document(
         except Exception:
             pass
 
-        return {
-            "id": str(doc.id),
-            "title": doc.title,
-            "slug": doc.slug,
-            "status": doc.status,
-            "tags": list(doc.tags.values_list("name", flat=True)),
-            "created_at": doc.created_at.isoformat(),
-        }
+        return _doc_to_dict(doc, include_body=False)
 
     return await sync_to_async(_create, thread_sensitive=False)()
 
@@ -176,7 +201,7 @@ async def update_document(
     """Update an existing document.
 
     Args:
-        slug: The document's URL slug
+        slug: The document's URL slug or path
         title: New title (optional)
         body: New markdown body (optional)
         status: New status (optional)
@@ -187,9 +212,18 @@ async def update_document(
     """
 
     def _update():
-        try:
-            doc = Document.objects.get(slug=slug)
-        except Document.DoesNotExist:
+        # Resolve by path
+        segments = [s for s in slug.strip("/").split("/") if s]
+        doc = None
+        parent = None
+        for segment in segments:
+            try:
+                doc = Document.objects.get(slug=segment, parent=parent)
+            except Document.DoesNotExist:
+                return {"error": f"Document '{slug}' not found"}
+            parent = doc
+
+        if doc is None:
             return {"error": f"Document '{slug}' not found"}
 
         if title is not None:
@@ -221,14 +255,7 @@ async def update_document(
             except Exception:
                 pass
 
-        return {
-            "id": str(doc.id),
-            "title": doc.title,
-            "slug": doc.slug,
-            "status": doc.status,
-            "tags": list(doc.tags.values_list("name", flat=True)),
-            "updated_at": doc.updated_at.isoformat(),
-        }
+        return _doc_to_dict(doc)
 
     return await sync_to_async(_update, thread_sensitive=False)()
 
@@ -238,16 +265,25 @@ async def archive_document(slug: str) -> dict:
     """Archive a document (soft delete — sets status to 'archived').
 
     Args:
-        slug: The document's URL slug
+        slug: The document's URL slug or path
 
     Returns:
         Confirmation with document id and slug
     """
 
     def _archive():
-        try:
-            doc = Document.objects.get(slug=slug)
-        except Document.DoesNotExist:
+        # Resolve by path
+        segments = [s for s in slug.strip("/").split("/") if s]
+        doc = None
+        parent = None
+        for segment in segments:
+            try:
+                doc = Document.objects.get(slug=segment, parent=parent)
+            except Document.DoesNotExist:
+                return {"error": f"Document '{slug}' not found"}
+            parent = doc
+
+        if doc is None:
             return {"error": f"Document '{slug}' not found"}
 
         doc.status = Document.Status.ARCHIVED
@@ -256,6 +292,7 @@ async def archive_document(slug: str) -> dict:
         return {
             "id": str(doc.id),
             "slug": doc.slug,
+            "path": doc.get_path(),
             "status": doc.status,
             "message": f"Document '{doc.title}' archived.",
         }
@@ -284,16 +321,6 @@ async def list_documents(status: str = "published", limit: int = 20) -> list[dic
                 return [{"error": f"Invalid status '{status}'"}]
             qs = qs.filter(status=status)
 
-        return [
-            {
-                "id": str(doc.id),
-                "title": doc.title,
-                "slug": doc.slug,
-                "status": doc.status,
-                "tags": list(doc.tags.values_list("name", flat=True)),
-                "updated_at": doc.updated_at.isoformat(),
-            }
-            for doc in qs[:_limit]
-        ]
+        return [_doc_to_dict(doc) for doc in qs[:_limit]]
 
     return await sync_to_async(_list, thread_sensitive=False)()

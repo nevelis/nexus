@@ -1,8 +1,9 @@
-"""Tests for the documents app: models, views, and MCP tools."""
+"""Tests for the documents app: models, views, hierarchy, aliases, and MCP tools."""
 
+from django.core.exceptions import ValidationError
 from django.test import Client, TestCase, TransactionTestCase
 
-from .models import Document, Tag
+from .models import MAX_DEPTH, Document, SlugAlias, Tag
 
 # ── Tag model ────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ class TestDocumentModel(TestCase):
         doc = Document(status=Document.Status.ARCHIVED)
         self.assertFalse(doc.is_published)
 
-    def test_get_absolute_url(self):
+    def test_get_absolute_url_root_doc(self):
         doc = Document.objects.create(title="Test", slug="test-slug", body="content")
         self.assertEqual(doc.get_absolute_url(), "/test-slug/")
 
@@ -75,6 +76,162 @@ class TestDocumentModel(TestCase):
         doc1.body = "updated"
         doc1.save()
         self.assertEqual(Document.objects.first(), doc1)
+
+
+# ── Hierarchy model tests ───────────────────────────────────────────────────
+
+
+class TestDocumentHierarchy(TestCase):
+    def setUp(self):
+        self.root = Document.objects.create(title="The Pit", slug="pit", body="Root page")
+
+    def test_parent_field_nullable(self):
+        """Root documents have parent=None."""
+        self.assertIsNone(self.root.parent)
+
+    def test_create_child_document(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="Child", parent=self.root
+        )
+        self.assertEqual(child.parent, self.root)
+
+    def test_get_path_root(self):
+        self.assertEqual(self.root.get_path(), "pit")
+
+    def test_get_path_child(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        self.assertEqual(child.get_path(), "pit/strategy")
+
+    def test_get_path_grandchild(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        grandchild = Document.objects.create(
+            title="Phase 1", slug="phase-1", body="content", parent=child
+        )
+        self.assertEqual(grandchild.get_path(), "pit/strategy/phase-1")
+
+    def test_get_absolute_url_hierarchical(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        self.assertEqual(child.get_absolute_url(), "/pit/strategy/")
+
+    def test_get_ancestors_root(self):
+        self.assertEqual(self.root.get_ancestors(), [])
+
+    def test_get_ancestors_child(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        ancestors = child.get_ancestors()
+        self.assertEqual(len(ancestors), 1)
+        self.assertEqual(ancestors[0], self.root)
+
+    def test_get_ancestors_grandchild(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        grandchild = Document.objects.create(
+            title="Phase 1", slug="phase-1", body="content", parent=child
+        )
+        ancestors = grandchild.get_ancestors()
+        self.assertEqual(len(ancestors), 2)
+        self.assertEqual(ancestors[0], self.root)
+        self.assertEqual(ancestors[1], child)
+
+    def test_children_relation(self):
+        child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        self.assertIn(child, self.root.children.all())
+
+    def test_same_slug_different_parents_allowed(self):
+        """Two children of different parents can share a slug."""
+        other_root = Document.objects.create(title="Other", slug="other", body="content")
+        Document.objects.create(title="Intro A", slug="intro", body="content", parent=self.root)
+        Document.objects.create(title="Intro B", slug="intro", body="content", parent=other_root)
+        # Both exist without error
+        self.assertEqual(Document.objects.filter(slug="intro").count(), 2)
+
+
+# ── Depth cap enforcement ────────────────────────────────────────────────────
+
+
+class TestDepthCap(TestCase):
+    def test_max_depth_is_3(self):
+        self.assertEqual(MAX_DEPTH, 3)
+
+    def test_depth_1_root_allowed(self):
+        doc = Document.objects.create(title="Root", slug="root", body="content")
+        self.assertEqual(doc._get_depth(), 1)
+
+    def test_depth_2_child_allowed(self):
+        root = Document.objects.create(title="Root", slug="root", body="content")
+        child = Document.objects.create(title="Child", slug="child", body="content", parent=root)
+        self.assertEqual(child._get_depth(), 2)
+
+    def test_depth_3_grandchild_allowed(self):
+        root = Document.objects.create(title="Root", slug="root", body="content")
+        child = Document.objects.create(title="Child", slug="child", body="content", parent=root)
+        grandchild = Document.objects.create(
+            title="Grandchild", slug="grandchild", body="content", parent=child
+        )
+        self.assertEqual(grandchild._get_depth(), 3)
+
+    def test_depth_4_rejected(self):
+        root = Document.objects.create(title="Root", slug="root", body="content")
+        child = Document.objects.create(title="Child", slug="child", body="content", parent=root)
+        grandchild = Document.objects.create(
+            title="Grandchild", slug="grandchild", body="content", parent=child
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            Document.objects.create(
+                title="Too Deep", slug="too-deep", body="content", parent=grandchild
+            )
+        self.assertIn("Maximum nesting depth", str(ctx.exception))
+
+    def test_circular_reference_rejected(self):
+        root = Document.objects.create(title="Root", slug="root", body="content")
+        child = Document.objects.create(title="Child", slug="child", body="content", parent=root)
+        # Try to make root a child of its own child
+        root.parent = child
+        with self.assertRaises(ValidationError) as ctx:
+            root.save()
+        self.assertIn("circular reference", str(ctx.exception))
+
+
+# ── SlugAlias model ──────────────────────────────────────────────────────────
+
+
+class TestSlugAlias(TestCase):
+    def test_create_alias(self):
+        doc = Document.objects.create(title="Test", slug="test", body="content")
+        alias = SlugAlias.objects.create(slug="old-test", document=doc)
+        self.assertEqual(alias.slug, "old-test")
+        self.assertEqual(alias.document, doc)
+
+    def test_str_representation(self):
+        doc = Document.objects.create(title="Test", slug="test", body="content")
+        alias = SlugAlias.objects.create(slug="old-test", document=doc)
+        self.assertIn("old-test", str(alias))
+        self.assertIn("test", str(alias))
+
+    def test_alias_slug_unique(self):
+        doc = Document.objects.create(title="Test", slug="test", body="content")
+        SlugAlias.objects.create(slug="old-test", document=doc)
+        from django.db import IntegrityError
+
+        with self.assertRaises(IntegrityError):
+            SlugAlias.objects.create(slug="old-test", document=doc)
+
+    def test_cascade_delete(self):
+        doc = Document.objects.create(title="Test", slug="test", body="content")
+        SlugAlias.objects.create(slug="old-test", document=doc)
+        doc.delete()
+        self.assertEqual(SlugAlias.objects.count(), 0)
 
 
 # ── Document list view ───────────────────────────────────────────────────────
@@ -141,7 +298,7 @@ class TestDocumentListView(TestCase):
         self.assertEqual(response.context["current_status"], "draft")
 
 
-# ── Document detail view ─────────────────────────────────────────────────────
+# ── Document detail view (hierarchical) ─────────────────────────────────────
 
 
 class TestDocumentDetailView(TestCase):
@@ -163,13 +320,95 @@ class TestDocumentDetailView(TestCase):
 
     def test_body_rendered_as_html(self):
         response = self.client.get("/test-doc/")
-        # markdown 3.x adds id= attributes to headings: <h1 id="heading">…</h1>
-        # Match the tag open without asserting the exact attribute list.
         self.assertIn("<h1", response.context["body_html"])
         self.assertIn("<strong>", response.context["body_html"])
 
     def test_returns_404_for_missing_slug(self):
         response = self.client.get("/this-does-not-exist/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_breadcrumbs_empty_for_root(self):
+        response = self.client.get("/test-doc/")
+        self.assertEqual(response.context["breadcrumbs"], [])
+
+    def test_breadcrumbs_for_child(self):
+        Document.objects.create(title="Child Page", slug="child", body="content", parent=self.doc)
+        response = self.client.get("/test-doc/child/")
+        self.assertEqual(response.status_code, 200)
+        breadcrumbs = response.context["breadcrumbs"]
+        self.assertEqual(len(breadcrumbs), 1)
+        self.assertEqual(breadcrumbs[0]["title"], "Test Doc")
+        self.assertEqual(breadcrumbs[0]["url"], "/test-doc/")
+
+    def test_breadcrumbs_for_grandchild(self):
+        child = Document.objects.create(
+            title="Child", slug="child", body="content", parent=self.doc
+        )
+        Document.objects.create(title="Grandchild", slug="grandchild", body="content", parent=child)
+        response = self.client.get("/test-doc/child/grandchild/")
+        self.assertEqual(response.status_code, 200)
+        breadcrumbs = response.context["breadcrumbs"]
+        self.assertEqual(len(breadcrumbs), 2)
+        self.assertEqual(breadcrumbs[0]["title"], "Test Doc")
+        self.assertEqual(breadcrumbs[1]["title"], "Child")
+
+    def test_children_listed_on_parent_page(self):
+        Document.objects.create(
+            title="Child A",
+            slug="child-a",
+            body="content",
+            parent=self.doc,
+            status="published",
+        )
+        Document.objects.create(
+            title="Child B",
+            slug="child-b",
+            body="content",
+            parent=self.doc,
+            status="published",
+        )
+        response = self.client.get("/test-doc/")
+        children = list(response.context["children"])
+        self.assertEqual(len(children), 2)
+
+    def test_draft_children_not_listed(self):
+        Document.objects.create(
+            title="Draft Child",
+            slug="draft-child",
+            body="content",
+            parent=self.doc,
+            status="draft",
+        )
+        response = self.client.get("/test-doc/")
+        children = list(response.context["children"])
+        self.assertEqual(len(children), 0)
+
+
+# ── Slug alias redirect view ────────────────────────────────────────────────
+
+
+class TestSlugAliasRedirect(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.root = Document.objects.create(title="The Pit", slug="pit", body="Root")
+        self.child = Document.objects.create(
+            title="Strategy", slug="strategy", body="content", parent=self.root
+        )
+        # Old flat slug alias
+        SlugAlias.objects.create(slug="pit-strategy", document=self.child)
+
+    def test_alias_301_redirects_to_hierarchical_url(self):
+        response = self.client.get("/pit-strategy/")
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(response["Location"], "/pit/strategy/")
+
+    def test_hierarchical_url_resolves_directly(self):
+        response = self.client.get("/pit/strategy/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["document"], self.child)
+
+    def test_nonexistent_alias_returns_404(self):
+        response = self.client.get("/no-such-alias/")
         self.assertEqual(response.status_code, 404)
 
 
@@ -283,6 +522,18 @@ class TestDocumentEditView(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertIn("HX-Redirect", response)
 
+    def test_edit_child_document_via_hierarchical_path(self):
+        child = Document.objects.create(
+            title="Child",
+            slug="child",
+            body="child body",
+            parent=self.doc,
+            status="draft",
+        )
+        response = self.client.get("/original/child/edit/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["document"], child)
+
 
 # ── MCP: get_document ────────────────────────────────────────────────────────
 
@@ -308,7 +559,18 @@ class TestMCPGetDocument(TransactionTestCase):
         from documents.mcp import get_document
 
         result = await get_document("mcp-doc")
-        for field in ("id", "title", "slug", "body", "status", "tags", "created_at", "updated_at"):
+        for field in (
+            "id",
+            "title",
+            "slug",
+            "body",
+            "status",
+            "tags",
+            "created_at",
+            "updated_at",
+            "path",
+            "url",
+        ):
             self.assertIn(field, result)
 
     async def test_returns_error_for_missing_slug(self):
@@ -325,6 +587,14 @@ class TestMCPGetDocument(TransactionTestCase):
         result = await get_document("mcp-doc")
         self.assertIn("mytag", result["tags"])
 
+    async def test_get_document_by_path(self):
+        from documents.mcp import get_document
+
+        await Document.objects.acreate(title="Child", slug="child", body="content", parent=self.doc)
+        result = await get_document("mcp-doc/child")
+        self.assertEqual(result["title"], "Child")
+        self.assertEqual(result["path"], "mcp-doc/child")
+
 
 # ── MCP: create_document ─────────────────────────────────────────────────────
 
@@ -338,6 +608,7 @@ class TestMCPCreateDocument(TransactionTestCase):
         self.assertEqual(result["status"], "draft")
         self.assertIn("id", result)
         self.assertIn("slug", result)
+        self.assertIn("path", result)
 
     async def test_creates_document_with_custom_status(self):
         from documents.mcp import create_document
@@ -362,6 +633,14 @@ class TestMCPCreateDocument(TransactionTestCase):
 
         await create_document(title="Persisted", body="body")
         self.assertTrue(await Document.objects.filter(title="Persisted").aexists())
+
+    async def test_create_child_document(self):
+        from documents.mcp import create_document
+
+        # Create parent first
+        await Document.objects.acreate(title="Parent", slug="parent", body="content")
+        result = await create_document(title="Child", body="content", parent_slug="parent")
+        self.assertEqual(result["path"], "parent/child")
 
 
 # ── MCP: update_document ─────────────────────────────────────────────────────
@@ -423,6 +702,13 @@ class TestMCPUpdateDocument(TransactionTestCase):
         result = await update_document("update-me", status="nonsense")
         self.assertIn("error", result)
 
+    async def test_includes_path_in_response(self):
+        from documents.mcp import update_document
+
+        result = await update_document("update-me", title="Updated")
+        self.assertIn("path", result)
+        self.assertIn("url", result)
+
 
 # ── MCP: archive_document ────────────────────────────────────────────────────
 
@@ -450,6 +736,7 @@ class TestMCPArchiveDocument(TransactionTestCase):
         result = await archive_document("archive-me")
         self.assertIn("id", result)
         self.assertEqual(result["slug"], "archive-me")
+        self.assertIn("path", result)
 
     async def test_returns_error_for_missing_document(self):
         from documents.mcp import archive_document
@@ -506,7 +793,7 @@ class TestMCPListDocuments(TransactionTestCase):
 
         result = await list_documents(status="all")
         for doc in result:
-            for field in ("id", "title", "slug", "status", "tags", "updated_at"):
+            for field in ("id", "title", "slug", "status", "tags", "updated_at", "path", "url"):
                 self.assertIn(field, doc)
 
 
@@ -573,6 +860,8 @@ class TestMCPSearchDocuments(TransactionTestCase):
                 "score",
                 "tags",
                 "updated_at",
+                "path",
+                "url",
             ):
                 self.assertIn(field, doc)
 
